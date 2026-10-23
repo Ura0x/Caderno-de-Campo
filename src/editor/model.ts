@@ -11,6 +11,9 @@ export interface Selection {
 
 const MIN_ROWS = 2
 
+/** Valor de flexbox para cada alinhamento vertical (editor e PDF). */
+export const V_ALIGN_FLEX = { top: 'flex-start', middle: 'center', bottom: 'flex-end' } as const
+
 export const DEFAULT_FONT_SIZE = 14
 export const FONT_SIZES = [10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 40]
 

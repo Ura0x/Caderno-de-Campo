@@ -57,6 +57,7 @@ export interface Sheet extends SheetSummary {
 // diferentes de linhas, e todas se esticam até a mesma altura.
 
 export type Align = 'left' | 'center' | 'right'
+export type VAlign = 'top' | 'middle' | 'bottom'
 
 export interface CellStyle {
   bg?: string
@@ -64,6 +65,8 @@ export interface CellStyle {
   bold?: boolean
   italic?: boolean
   align?: Align
+  /** Alinhamento vertical; sem valor = topo. */
+  vAlign?: VAlign
   /** Tamanho da letra em px; sem valor = tamanho padrão (DEFAULT_FONT_SIZE). */
   fontSize?: number
 }

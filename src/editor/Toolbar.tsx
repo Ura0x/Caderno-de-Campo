@@ -2,6 +2,9 @@ import {
   AlignCenter,
   AlignLeft,
   AlignRight,
+  AlignVerticalJustifyCenter,
+  AlignVerticalJustifyEnd,
+  AlignVerticalJustifyStart,
   Bold,
   Columns3,
   Eraser,
@@ -16,7 +19,7 @@ import {
 } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { cx } from '@/components/ui'
-import type { Align, CellStyle } from '@/lib/types'
+import type { Align, CellStyle, VAlign } from '@/lib/types'
 import { DEFAULT_FONT_SIZE, FONT_SIZES, effectiveStyle, ops, resolve, stepFontSize, type Scope } from './model'
 import { useEditor } from './store'
 
@@ -126,6 +129,15 @@ export function Toolbar() {
           const name = { left: 'à esquerda', center: 'ao centro', right: 'à direita' }[a]
           return (
             <Tool key={a} label={`Alinhar ${name}`} disabled={off} active={(current.align ?? 'left') === a && !off} onClick={() => style({ align: a === 'left' ? undefined : a })}>
+              <Icon size={18} />
+            </Tool>
+          )
+        })}
+        {(['top', 'middle', 'bottom'] as VAlign[]).map((a) => {
+          const Icon = { top: AlignVerticalJustifyStart, middle: AlignVerticalJustifyCenter, bottom: AlignVerticalJustifyEnd }[a]
+          const name = { top: 'no topo', middle: 'no meio', bottom: 'embaixo' }[a]
+          return (
+            <Tool key={a} label={`Alinhar ${name}`} disabled={off} active={(current.vAlign ?? 'top') === a && !off} onClick={() => style({ vAlign: a === 'top' ? undefined : a })}>
               <Icon size={18} />
             </Tool>
           )

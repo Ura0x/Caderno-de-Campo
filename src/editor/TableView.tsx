@@ -18,7 +18,7 @@ import { GripHorizontal, GripVertical, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import { cx } from '@/components/ui'
 import type { Cell, Column, SheetTable } from '@/lib/types'
-import { columnName, effectiveStyle, ops } from './model'
+import { V_ALIGN_FLEX, columnName, effectiveStyle, ops } from './model'
 import { useEditor } from './store'
 
 const COLUMN_MIN_WIDTH = 140
@@ -188,7 +188,7 @@ function CellView({
         mark === 'selected' && 'z-[1] outline-2 -outline-offset-2 outline-emerald-600',
         mark === 'scope' && 'z-[1] outline-2 -outline-offset-2 outline-emerald-400 outline-dashed',
       )}
-      style={{ backgroundColor: style.bg }}
+      style={{ backgroundColor: style.bg, alignItems: V_ALIGN_FLEX[style.vAlign ?? 'top'] }}
       title={label}
       onMouseDown={(e) => {
         if (e.target !== ref.current) {
@@ -214,6 +214,8 @@ function CellView({
           fontSize: style.fontSize,
           fontStyle: style.italic ? 'italic' : undefined,
           textAlign: style.align,
+          // Compensa o espaço do número da linha (pr-6) para o centro ficar no meio.
+          paddingLeft: style.align === 'center' ? '1.5rem' : undefined,
         }}
       />
     </div>

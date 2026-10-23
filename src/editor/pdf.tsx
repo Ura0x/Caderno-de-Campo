@@ -1,6 +1,6 @@
 import { Document, Page, StyleSheet, Text, View, pdf } from '@react-pdf/renderer'
 import type { SheetContent, SheetTable } from '@/lib/types'
-import { DEFAULT_FONT_SIZE, effectiveStyle } from './model'
+import { DEFAULT_FONT_SIZE, V_ALIGN_FLEX, effectiveStyle } from './model'
 
 export type Orientation = 'portrait' | 'landscape'
 
@@ -46,6 +46,7 @@ function PdfTable({ table }: { table: SheetTable }) {
                     s.cell,
                     i === col.cells.length - 1 ? { borderBottomWidth: 0 } : {},
                     st.bg ? { backgroundColor: st.bg } : {},
+                    { justifyContent: V_ALIGN_FLEX[st.vAlign ?? 'top'] },
                   ]}
                 >
                   <Text
