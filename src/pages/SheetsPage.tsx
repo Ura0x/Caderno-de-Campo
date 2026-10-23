@@ -1,4 +1,4 @@
-import { CalendarDays, FileSpreadsheet, Plus, Search, SlidersHorizontal, Users, X } from 'lucide-react'
+import { CalendarDays, FileSpreadsheet, Plus, Search, SlidersHorizontal, UserX, Users, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { SheetMetaForm, emptyMeta } from '@/components/SheetMetaForm'
@@ -10,6 +10,8 @@ import type { SheetSummary } from '@/lib/types'
 interface Filters {
   q: string
   client: string
+  /** Só planilhas sem nenhum cliente vinculado. */
+  noClient: boolean
   crop: string
   variety: string
   season: string
@@ -17,13 +19,14 @@ interface Filters {
   to: string
 }
 
-const noFilters: Filters = { q: '', client: '', crop: '', variety: '', season: '', from: '', to: '' }
+const noFilters: Filters = { q: '', client: '', noClient: false, crop: '', variety: '', season: '', from: '', to: '' }
 
 function matches(s: SheetSummary, f: Filters) {
   const day = s.created_at.slice(0, 10)
   return (
     (!f.q || s.title.toLowerCase().includes(f.q.toLowerCase())) &&
     (!f.client || s.client_ids.includes(f.client)) &&
+    (!f.noClient || s.client_ids.length === 0) &&
     (!f.crop || s.crop_id === f.crop) &&
     (!f.variety || s.variety_id === f.variety) &&
     (!f.season || s.season_id === f.season) &&
@@ -39,7 +42,8 @@ export function SheetsPage() {
   const [creating, setCreating] = useState(false)
 
   const visible = useMemo(() => (sheets.data ?? []).filter((s) => matches(s, filters)), [sheets.data, filters])
-  const activeCount = Object.entries(filters).filter(([k, v]) => k !== 'q' && v).length
+  const activeCount = Object.entries(filters).filter(([k, v]) => k !== 'q' && k !== 'noClient' && v).length
+  const withoutClient = (sheets.data ?? []).filter((s) => s.client_ids.length === 0).length
 
   return (
     <div className="flex flex-col gap-5">
@@ -69,6 +73,27 @@ export function SheetsPage() {
             )}
           </Button>
         </div>
+        {withoutClient > 0 && (
+          <div>
+            <button
+              onClick={() => setFilters({ ...filters, noClient: !filters.noClient, client: '' })}
+              aria-pressed={filters.noClient}
+              className={cx(
+                'flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium transition-colors',
+                filters.noClient
+                  ? 'border-orange-500 bg-orange-500 text-white'
+                  : 'border-orange-300 bg-orange-50 text-orange-700 hover:bg-orange-100',
+              )}
+            >
+              <UserX size={15} />
+              Sem cliente
+              <span className={cx('rounded-full px-1.5 text-xs', filters.noClient ? 'bg-white/25' : 'bg-orange-200/70')}>
+                {withoutClient}
+              </span>
+              {filters.noClient && <X size={14} />}
+            </button>
+          </div>
+        )}
         {showFilters && <FilterPanel filters={filters} onChange={setFilters} />}
       </div>
 
@@ -103,7 +128,7 @@ function FilterPanel({ filters, onChange }: { filters: Filters; onChange: (f: Fi
   return (
     <div className="grid grid-cols-2 gap-3 border-t border-slate-100 pt-3 md:grid-cols-3 lg:grid-cols-6">
       <Field label="Cliente">
-        <Select value={filters.client} onChange={(e) => set({ client: e.target.value })}>
+        <Select value={filters.client} onChange={(e) => set({ client: e.target.value, noClient: false })}>
           <option value="">Todos</option>
           {clients.map((c) => (
             <option key={c.id} value={c.id}>{c.name}</option>
@@ -169,10 +194,16 @@ function SheetCard({ sheet }: { sheet: SheetSummary }) {
           {season && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-800">Safra {season}</span>}
         </div>
         <div className="mt-auto flex flex-col gap-1 text-sm text-slate-500">
-          <span className="flex items-center gap-1.5">
-            <Users size={14} className="shrink-0" />
-            <span className="truncate">{clientNames.length ? clientNames.join(', ') : 'Sem cliente'}</span>
-          </span>
+          {clientNames.length ? (
+            <span className="flex items-center gap-1.5">
+              <Users size={14} className="shrink-0" />
+              <span className="truncate">{clientNames.join(', ')}</span>
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5 font-medium text-orange-600">
+              <UserX size={14} className="shrink-0" /> Sem cliente
+            </span>
+          )}
           <span className="flex items-center gap-1.5">
             <CalendarDays size={14} /> Criada em {formatDate(sheet.created_at)}
           </span>

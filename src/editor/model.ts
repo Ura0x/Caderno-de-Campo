@@ -11,6 +11,15 @@ export interface Selection {
 
 const MIN_ROWS = 2
 
+export const DEFAULT_FONT_SIZE = 14
+export const FONT_SIZES = [10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 40]
+
+/** Próximo tamanho da lista, para cima (+1) ou para baixo (-1). */
+export function stepFontSize(current: number, dir: 1 | -1): number {
+  const next = dir > 0 ? FONT_SIZES.find((s) => s > current) : FONT_SIZES.findLast((s) => s < current)
+  return next ?? current
+}
+
 export const newCell = (raw = ''): Cell => ({ id: nanoid(8), raw })
 
 export const newColumn = (rows = 1): Column => ({
@@ -32,6 +41,13 @@ export function normalizeContent(value: unknown): SheetContent {
 }
 
 export const effectiveStyle = (col: Column, cell: Cell): CellStyle => ({ ...col.style, ...cell.style })
+
+/** Nome da coluna no estilo planilha: 0 → A, 25 → Z, 26 → AA. */
+export function columnName(index: number): string {
+  let name = ''
+  for (let n = index + 1; n > 0; n = Math.floor((n - 1) / 26)) name = String.fromCharCode(65 + ((n - 1) % 26)) + name
+  return name
+}
 
 export const maxRows = (table: SheetTable) => Math.max(1, ...table.columns.map((c) => c.cells.length))
 

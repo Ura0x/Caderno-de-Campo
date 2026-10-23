@@ -2,15 +2,16 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
 import type { Client, Crop, Season, Sheet, SheetContent, SheetMeta, SheetSummary, Variety } from './types'
 import { normalizeContent } from '@/editor/model'
+import { translateDbError } from './errors'
 
 interface Result<T> {
   data: T | null
-  error: { message: string } | null
+  error: { message: string; code?: string } | null
 }
 
 async function unwrap<T>(query: PromiseLike<Result<T>>): Promise<T> {
   const { data, error } = await query
-  if (error) throw new Error(error.message)
+  if (error) throw translateDbError(error)
   return data as T
 }
 

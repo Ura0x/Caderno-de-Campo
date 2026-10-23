@@ -64,6 +64,8 @@ export interface CellStyle {
   bold?: boolean
   italic?: boolean
   align?: Align
+  /** Tamanho da letra em px; sem valor = tamanho padrão (DEFAULT_FONT_SIZE). */
+  fontSize?: number
 }
 
 export interface Cell {

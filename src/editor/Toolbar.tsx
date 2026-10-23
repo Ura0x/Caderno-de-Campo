@@ -6,6 +6,8 @@ import {
   Columns3,
   Eraser,
   Italic,
+  Minus,
+  Plus,
   PaintBucket,
   Redo2,
   Rows3,
@@ -15,7 +17,7 @@ import {
 import { useMemo, useState, type ReactNode } from 'react'
 import { cx } from '@/components/ui'
 import type { Align, CellStyle } from '@/lib/types'
-import { effectiveStyle, ops, resolve, type Scope } from './model'
+import { DEFAULT_FONT_SIZE, FONT_SIZES, effectiveStyle, ops, resolve, stepFontSize, type Scope } from './model'
 import { useEditor } from './store'
 
 const BG_COLORS = ['#ffffff', '#f1f5f9', '#e2e8f0', '#fef9c3', '#fde68a', '#fed7aa', '#fecaca', '#fbcfe8', '#e9d5ff', '#bfdbfe', '#a5f3fc', '#bbf7d0', '#d9f99d', '#047857', '#1e3a8a', '#0f172a']
@@ -42,6 +44,8 @@ export function Toolbar() {
   const off = !target
 
   const style = (patch: CellStyle) => selection && apply((d) => ops.applyStyle(d, selection, scope, patch))
+  const fontSize = current.fontSize ?? DEFAULT_FONT_SIZE
+  const setFontSize = (size: number) => style({ fontSize: size === DEFAULT_FONT_SIZE ? undefined : size })
   const run = (fn: (sel: NonNullable<typeof selection>) => void) => () => selection && target && fn(selection)
 
   return (
@@ -102,6 +106,15 @@ export function Toolbar() {
           ))}
         </div>
 
+        <div className="flex shrink-0 items-center rounded-lg border border-slate-200" title="Tamanho da letra">
+          <Tool label="Diminuir letra" disabled={off || fontSize <= FONT_SIZES[0]} onClick={() => setFontSize(stepFontSize(fontSize, -1))}>
+            <Minus size={16} />
+          </Tool>
+          <span className={cx('w-6 text-center text-sm font-medium tabular-nums', off ? 'text-slate-300' : 'text-slate-700')}>{fontSize}</span>
+          <Tool label="Aumentar letra" disabled={off || fontSize >= FONT_SIZES.at(-1)!} onClick={() => setFontSize(stepFontSize(fontSize, 1))}>
+            <Plus size={16} />
+          </Tool>
+        </div>
         <Tool label="Negrito" disabled={off} active={current.bold} onClick={() => style({ bold: current.bold ? undefined : true })}>
           <Bold size={18} />
         </Tool>

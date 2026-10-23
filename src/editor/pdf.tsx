@@ -1,6 +1,6 @@
 import { Document, Page, StyleSheet, Text, View, pdf } from '@react-pdf/renderer'
 import type { SheetContent, SheetTable } from '@/lib/types'
-import { effectiveStyle } from './model'
+import { DEFAULT_FONT_SIZE, effectiveStyle } from './model'
 
 export type Orientation = 'portrait' | 'landscape'
 
@@ -10,9 +10,12 @@ export interface PdfHeader {
 }
 
 const BORDER = '#94a3b8'
+const BASE_FONT = 9
+// Mantém a proporção do editor: 14px na tela = 9pt no PDF.
+const pdfFontSize = (px?: number) => ((px ?? DEFAULT_FONT_SIZE) * BASE_FONT) / DEFAULT_FONT_SIZE
 
 const s = StyleSheet.create({
-  page: { padding: 32, fontSize: 9, fontFamily: 'Helvetica', color: '#0f172a' },
+  page: { padding: 32, fontSize: BASE_FONT, fontFamily: 'Helvetica', color: '#0f172a' },
   title: { fontSize: 16, fontFamily: 'Helvetica-Bold', marginBottom: 6 },
   details: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 16, color: '#475569' },
   detail: { marginRight: 14, marginBottom: 2 },
@@ -49,6 +52,7 @@ function PdfTable({ table }: { table: SheetTable }) {
                     style={{
                       color: st.color,
                       textAlign: st.align ?? 'left',
+                      fontSize: pdfFontSize(st.fontSize),
                       fontFamily: `Helvetica${st.bold && st.italic ? '-BoldOblique' : st.bold ? '-Bold' : st.italic ? '-Oblique' : ''}`,
                     }}
                   >

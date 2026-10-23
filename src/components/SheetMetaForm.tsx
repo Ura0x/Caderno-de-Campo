@@ -2,7 +2,7 @@ import { Check, Plus, Search } from 'lucide-react'
 import { useState } from 'react'
 import { useClients, useCrops, useSaveRow, useSeasons, useVarieties } from '@/lib/api'
 import type { Client, SheetMeta } from '@/lib/types'
-import { Field, Input, Select, cx } from './ui'
+import { ErrorText, Field, Input, Select, cx } from './ui'
 
 export const emptyMeta = (): SheetMeta => ({ title: '', crop_id: null, variety_id: null, season_id: null, client_ids: [] })
 
@@ -23,7 +23,7 @@ export function SheetMetaForm({ value, onChange }: { value: SheetMeta; onChange:
           placeholder="Ex.: Programa de nutrição 2º semestre"
         />
       </Field>
-      <Field label="Clientes">
+      <Field label="Clientes (opcional)">
         <ClientPicker value={value.client_ids} onChange={(client_ids) => set({ client_ids })} />
       </Field>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -83,11 +83,16 @@ function ClientPicker({ value, onChange }: { value: string[]; onChange: (ids: st
   const exact = clients.some((c) => c.name.toLowerCase() === q)
   const toggle = (id: string) => onChange(value.includes(id) ? value.filter((v) => v !== id) : [...value, id])
 
-  const quickCreate = async () => {
-    const created = await saveClient.mutateAsync({ name: query.trim() })
-    onChange([...value, created.id])
-    setQuery('')
-  }
+  const quickCreate = () =>
+    saveClient.mutate(
+      { name: query.trim() },
+      {
+        onSuccess: (created) => {
+          onChange([...value, created.id])
+          setQuery('')
+        },
+      },
+    )
 
   return (
     <div className="rounded-lg border border-slate-300 shadow-sm">
@@ -138,6 +143,11 @@ function ClientPicker({ value, onChange }: { value: string[]; onChange: (ids: st
         )}
         {!q && clients.length === 0 && <li className="px-3 py-2 text-sm text-slate-500">Nenhum cliente cadastrado.</li>}
       </ul>
+      {saveClient.error && (
+        <div className="border-t border-slate-200 p-2">
+          <ErrorText error={saveClient.error} />
+        </div>
+      )}
     </div>
   )
 }

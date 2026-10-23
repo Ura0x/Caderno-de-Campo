@@ -1,4 +1,5 @@
 import { Loader2, X } from 'lucide-react'
+import { errorMessage } from '@/lib/errors'
 import { useEffect, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react'
 
 const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(' ')
@@ -134,5 +135,5 @@ export function EmptyState({ icon, title, children }: { icon: ReactNode; title: 
 
 export function ErrorText({ error }: { error: unknown }) {
   if (!error) return null
-  return <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error instanceof Error ? error.message : String(error)}</p>
+  return <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessage(error)}</p>
 }

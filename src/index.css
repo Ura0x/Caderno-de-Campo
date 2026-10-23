@@ -4,6 +4,15 @@ html {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* O Tailwind v4 removeu o cursor de mãozinha padrão dos botões.
+   Na camada base, classes como cursor-grab continuam tendo prioridade. */
+@layer base {
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
 body {
   @apply bg-slate-100 text-slate-900 antialiased;
 }

@@ -18,7 +18,7 @@ import { GripHorizontal, GripVertical, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import { cx } from '@/components/ui'
 import type { Cell, Column, SheetTable } from '@/lib/types'
-import { effectiveStyle, ops } from './model'
+import { columnName, effectiveStyle, ops } from './model'
 import { useEditor } from './store'
 
 const COLUMN_MIN_WIDTH = 140
@@ -87,8 +87,8 @@ export function TableView({ table }: { table: SheetTable }) {
               className="flex w-full items-stretch overflow-hidden rounded-md border border-slate-300"
               style={{ minWidth: table.columns.length * COLUMN_MIN_WIDTH }}
             >
-              {table.columns.map((col) => (
-                <ColumnView key={col.id} tableId={table.id} col={col} />
+              {table.columns.map((col, i) => (
+                <ColumnView key={col.id} tableId={table.id} col={col} name={columnName(i)} />
               ))}
             </div>
           </SortableContext>
@@ -113,7 +113,7 @@ export function TableView({ table }: { table: SheetTable }) {
   )
 }
 
-function ColumnView({ tableId, col }: { tableId: string; col: Column }) {
+function ColumnView({ tableId, col, name }: { tableId: string; col: Column; name: string }) {
   const apply = useEditor((s) => s.apply)
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
     id: col.id,
@@ -132,14 +132,15 @@ function ColumnView({ tableId, col }: { tableId: string; col: Column }) {
         ref={setActivatorNodeRef}
         {...attributes}
         {...listeners}
-        className="flex h-5 cursor-grab touch-none items-center justify-center border-b border-slate-200 bg-slate-50 text-slate-300 hover:text-slate-500 active:cursor-grabbing"
-        aria-label="Arrastar coluna"
+        className="group flex h-6 cursor-grab touch-none items-center justify-center gap-1 border-b border-slate-200 bg-slate-50 active:cursor-grabbing"
+        aria-label={`Coluna ${name} (arrastar para mover)`}
       >
-        <GripHorizontal size={14} />
+        <span className="text-xs font-semibold text-slate-500">{name}</span>
+        <GripHorizontal size={14} className="text-slate-300 group-hover:text-slate-500" />
       </button>
       <div className="flex grow flex-col">
         {col.cells.map((cell, i) => (
-          <CellView key={cell.id} tableId={tableId} col={col} cell={cell} index={i} />
+          <CellView key={cell.id} tableId={tableId} col={col} cell={cell} index={i} label={`${name}${i + 1}`} />
         ))}
       </div>
       <button
@@ -153,7 +154,19 @@ function ColumnView({ tableId, col }: { tableId: string; col: Column }) {
   )
 }
 
-function CellView({ tableId, col, cell, index }: { tableId: string; col: Column; cell: Cell; index: number }) {
+function CellView({
+  tableId,
+  col,
+  cell,
+  index,
+  label,
+}: {
+  tableId: string
+  col: Column
+  cell: Cell
+  index: number
+  label: string
+}) {
   const apply = useEditor((s) => s.apply)
   const select = useEditor((s) => s.select)
   // Retorna string para evitar re-render de todas as células a cada mudança de seleção.
@@ -176,6 +189,7 @@ function CellView({ tableId, col, cell, index }: { tableId: string; col: Column;
         mark === 'scope' && 'z-[1] outline-2 -outline-offset-2 outline-emerald-400 outline-dashed',
       )}
       style={{ backgroundColor: style.bg }}
+      title={label}
       onMouseDown={(e) => {
         if (e.target !== ref.current) {
           e.preventDefault()
@@ -183,6 +197,12 @@ function CellView({ tableId, col, cell, index }: { tableId: string; col: Column;
         }
       }}
     >
+      <span
+        className="pointer-events-none absolute top-0.5 right-1 text-[10px] leading-none font-medium opacity-40 select-none"
+        style={{ color: style.color }}
+      >
+        {index + 1}
+      </span>
       <AutoTextarea
         ref={ref}
         value={cell.raw}
@@ -191,6 +211,7 @@ function CellView({ tableId, col, cell, index }: { tableId: string; col: Column;
         style={{
           color: style.color,
           fontWeight: style.bold ? 700 : undefined,
+          fontSize: style.fontSize,
           fontStyle: style.italic ? 'italic' : undefined,
           textAlign: style.align,
         }}
@@ -219,7 +240,7 @@ function AutoTextarea({
     el.style.height = `${el.scrollHeight}px`
   }
 
-  useLayoutEffect(fit, [value, style.fontWeight])
+  useLayoutEffect(fit, [value, style.fontWeight, style.fontSize])
 
   // Reajusta a altura quando a largura muda (janela redimensionada, coluna nova).
   useEffect(() => {
@@ -244,7 +265,7 @@ function AutoTextarea({
       onChange={(e) => onChange(e.target.value)}
       onFocus={onFocus}
       style={style}
-      className="block w-full resize-none overflow-hidden bg-transparent px-2 py-1.5 text-base leading-snug text-slate-900 outline-none md:text-sm"
+      className="block w-full resize-none overflow-hidden bg-transparent py-1.5 pr-6 pl-2 text-base leading-snug text-slate-900 outline-none md:text-sm"
     />
   )
 }
