@@ -1,20 +1,4 @@
-import {
-  DndContext,
-  KeyboardSensor,
-  PointerSensor,
-  closestCenter,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from '@dnd-kit/core'
-import {
-  SortableContext,
-  horizontalListSortingStrategy,
-  sortableKeyboardCoordinates,
-  useSortable,
-} from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
-import { GripHorizontal, GripVertical, Minus, Plus, Trash2 } from 'lucide-react'
+import { Minus, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { cx } from '@/components/ui'
 import type { Block, Cell, Column, SheetTable } from '@/lib/types'
@@ -37,28 +21,11 @@ import { useEditor } from './store'
 /** Largura mínima (px) de uma coluna de largura 1; abaixo disso a tabela rola na horizontal. */
 const COLUMN_MIN_WIDTH = 120
 
-export function useDndSensors() {
-  return useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    }),
-  )
-}
-
 export function TableView({ table }: { table: SheetTable }) {
   const apply = useEditor((s) => s.apply)
-  const sensors = useDndSensors()
-  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
-    id: table.id,
-  })
   // Bloco onde está a célula selecionada (se for desta tabela).
   const activeBlockId = useEditor((s) => (s.selection?.tableId === table.id ? s.selection.blockId : null))
   const canRemove = useEditor((s) => s.selection?.tableId === table.id && canRemoveLine(s.content, s.selection))
-
-  const onColumnDragEnd = ({ active, over }: DragEndEvent) => {
-    if (over && active.id !== over.id) apply((d) => ops.moveColumn(d, table.id, String(active.id), String(over.id)))
-  }
 
   const removeTable = () => {
     if (confirm(`Excluir a tabela “${table.title || 'sem título'}”?`)) apply((d) => ops.removeSection(d, table.id))
@@ -75,24 +42,8 @@ export function TableView({ table }: { table: SheetTable }) {
   })
 
   return (
-    <section
-      ref={setNodeRef}
-      style={{ transform: CSS.Translate.toString(transform), transition }}
-      className={cx(
-        'rounded-2xl border border-slate-200 bg-white shadow-sm',
-        isDragging && 'relative z-20 shadow-xl ring-2 ring-emerald-600/30',
-      )}
-    >
-      <header className="flex items-center gap-1 border-b border-slate-100 py-2 pr-2 pl-1">
-        <button
-          ref={setActivatorNodeRef}
-          {...attributes}
-          {...listeners}
-          className="cursor-grab touch-none rounded-md p-1.5 text-slate-400 hover:bg-slate-100 active:cursor-grabbing"
-          aria-label="Arrastar tabela"
-        >
-          <GripVertical size={18} />
-        </button>
+    <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <header className="flex items-center gap-1 border-b border-slate-100 py-2 pr-2 pl-2">
         <input
           value={table.title}
           onChange={(e) => apply((d) => ops.setTitle(d, table.id, e.target.value), `title:${table.id}`)}
@@ -125,15 +76,11 @@ export function TableView({ table }: { table: SheetTable }) {
               />
               <div className="overflow-hidden rounded-md border border-slate-300">
                 {fi === 0 && (
-                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onColumnDragEnd}>
-                    <SortableContext items={table.columns.map((c) => c.id)} strategy={horizontalListSortingStrategy}>
-                      <div className="flex border-b border-slate-300">
-                        {table.columns.map((col, i) => (
-                          <ColumnHeader key={col.id} col={col} name={columnName(i)} />
-                        ))}
-                      </div>
-                    </SortableContext>
-                  </DndContext>
+                  <div className="flex border-b border-slate-300">
+                    {table.columns.map((col, i) => (
+                      <ColumnHeader key={col.id} col={col} name={columnName(i)} />
+                    ))}
+                  </div>
                 )}
                 {frame.map(({ block, index }, i) => (
                   <BlockView
@@ -252,27 +199,15 @@ function FrameCaption({ tableId, block, active }: { tableId: string; block: Bloc
   )
 }
 
+/** Letra da coluna (A, B, C…), só para identificação. */
 function ColumnHeader({ col, name }: { col: Column; name: string }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: col.id })
   return (
-    <button
-      ref={setNodeRef}
-      style={{
-        transform: CSS.Translate.toString(transform),
-        transition,
-        flex: `${columnWidth(col)} 1 0%`,
-      }}
-      {...attributes}
-      {...listeners}
-      className={cx(
-        'group flex h-6 min-w-0 cursor-grab touch-none items-center justify-center gap-1 border-r border-slate-200 bg-slate-50 last:border-r-0 active:cursor-grabbing',
-        isDragging && 'relative z-10 bg-emerald-50 shadow-md',
-      )}
-      aria-label={`Coluna ${name} (arrastar para mover)`}
+    <div
+      style={{ flex: `${columnWidth(col)} 1 0%` }}
+      className="flex h-6 min-w-0 items-center justify-center border-r border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500 last:border-r-0"
     >
-      <span className="text-xs font-semibold text-slate-500">{name}</span>
-      <GripHorizontal size={14} className="text-slate-300 group-hover:text-slate-500" />
-    </button>
+      {name}
+    </div>
   )
 }
 

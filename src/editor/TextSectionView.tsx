@@ -1,6 +1,4 @@
-import { useSortable } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
-import { GripVertical, Pencil, StickyNote, Trash2 } from 'lucide-react'
+import { Pencil, StickyNote, Trash2 } from 'lucide-react'
 import { useLayoutEffect, useRef, useState } from 'react'
 import { cx } from '@/components/ui'
 import type { TextSection, Tone } from '@/lib/types'
@@ -12,9 +10,6 @@ import { useEditor } from './store'
 export function TextSectionView({ section }: { section: TextSection }) {
   const apply = useEditor((s) => s.apply)
   const [editing, setEditing] = useState(false)
-  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
-    id: section.id,
-  })
   const tone = TONES[section.tone]
 
   const remove = () => {
@@ -23,29 +18,10 @@ export function TextSectionView({ section }: { section: TextSection }) {
 
   return (
     <section
-      ref={setNodeRef}
-      style={{
-        transform: CSS.Translate.toString(transform),
-        transition,
-        backgroundColor: tone.bg,
-        borderColor: tone.border,
-        borderLeftColor: tone.accent,
-      }}
-      className={cx(
-        'rounded-2xl border border-l-4 shadow-sm',
-        isDragging && 'relative z-20 shadow-xl ring-2 ring-emerald-600/30',
-      )}
+      style={{ backgroundColor: tone.bg, borderColor: tone.border, borderLeftColor: tone.accent }}
+      className="rounded-2xl border border-l-4 shadow-sm"
     >
-      <header className="flex items-center gap-1 py-2 pr-2 pl-1">
-        <button
-          ref={setActivatorNodeRef}
-          {...attributes}
-          {...listeners}
-          className="cursor-grab touch-none rounded-md p-1.5 text-slate-400 hover:bg-black/5 active:cursor-grabbing"
-          aria-label="Arrastar bloco de texto"
-        >
-          <GripVertical size={18} />
-        </button>
+      <header className="flex items-center gap-1 py-2 pr-2 pl-3">
         <StickyNote size={18} style={{ color: tone.accent }} className="shrink-0" />
         {/* textarea para títulos longos quebrarem linha no celular; Enter não cria nova linha. */}
         <textarea

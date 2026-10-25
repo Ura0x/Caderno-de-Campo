@@ -2,7 +2,7 @@
 
 SPA para organizar planilhas de manejo (nutrição e defesa de plantas) por cliente, cultura, variedade e safra.
 
-**Stack:** React + TypeScript + Vite · Tailwind · Zustand + Immer (editor) · TanStack Query · dnd-kit · @react-pdf/renderer · Supabase (Postgres, Auth Google, RLS).
+**Stack:** React + TypeScript + Vite · Tailwind · Zustand + Immer (editor) · TanStack Query · @react-pdf/renderer · Supabase (Postgres, Auth Google, RLS).
 
 ## Rodando localmente
 

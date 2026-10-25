@@ -121,12 +121,30 @@ async function setSheetClients(sheetId: string, clientIds: string[]) {
   }
 }
 
+/**
+ * Título livre entre os existentes: se já houver uma planilha com o mesmo nome
+ * (sem diferenciar maiúsculas), acrescenta " (2)", " (3)"… ao nome base.
+ * Um "(n)" no fim do título é tratado como numeração: copiar "X (2)" gera "X (3)".
+ */
+export function uniqueTitle(title: string, existing: string[]): string {
+  const wanted = title.trim()
+  const taken = new Set(existing.map((t) => t.trim().toLowerCase()))
+  if (!taken.has(wanted.toLowerCase())) return wanted
+  const base = wanted.replace(/\s*\(\d+\)$/, '')
+  for (let n = 2; ; n++) {
+    const candidate = `${base} (${n})`
+    if (!taken.has(candidate.toLowerCase())) return candidate
+  }
+}
+
 export async function createSheet(meta: SheetMeta, content?: SheetContent): Promise<string> {
   const { client_ids, ...fields } = meta
+  const existing = await unwrap<{ title: string }[]>(supabase.from('sheets').select('title'))
+  const title = uniqueTitle(fields.title, existing.map((r) => r.title))
   const row = await unwrap<{ id: string }>(
     supabase
       .from('sheets')
-      .insert({ ...fields, ...(content && { content }) })
+      .insert({ ...fields, title, ...(content && { content }) })
       .select('id')
       .single(),
   )
@@ -156,7 +174,8 @@ async function buildNewSheet(source: NewSheetSource): Promise<{ meta: SheetMeta;
       // Cópia independente: mantém cultura e variedade, mas sem clientes.
       const base = await fetchSheet(source.sheetId)
       return {
-        meta: { ...blankMeta(`${base.title} (cópia)`), crop_id: base.crop_id, variety_id: base.variety_id },
+        // O título repetido ganha a numeração em createSheet: "X" → "X (2)".
+        meta: { ...blankMeta(base.title), crop_id: base.crop_id, variety_id: base.variety_id },
         content: base.content,
       }
     }

@@ -1,18 +1,16 @@
-import { DndContext, closestCenter, type DragEndEvent } from '@dnd-kit/core'
-import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { ArrowLeft, Check, CloudOff, Copy, FileDown, Loader2, Pencil, StickyNote, Table2, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { SheetMetaForm } from '@/components/SheetMetaForm'
 import { Button, Dialog, ErrorText, Field, PageLoader, cx } from '@/components/ui'
-import { createSheet, saveSheetContent, useDeleteSheet, useRenameSheet, useSheet, useUpdateSheetMeta } from '@/lib/api'
+import { createSheet, saveSheetContent, uniqueTitle, useDeleteSheet, useRenameSheet, useSheet, useUpdateSheetMeta } from '@/lib/api'
 import { formatDate, formatDay, useLookups } from '@/lib/lookups'
-import type { Sheet, SheetMeta } from '@/lib/types'
+import type { Sheet, SheetMeta, SheetSummary } from '@/lib/types'
 import { isText, ops } from '@/editor/model'
 import type { Orientation } from '@/editor/pdf'
 import { useEditor } from '@/editor/store'
-import { TableView, useDndSensors } from '@/editor/TableView'
+import { TableView } from '@/editor/TableView'
 import { TextSectionView } from '@/editor/TextSectionView'
 import { Toolbar } from '@/editor/Toolbar'
 
@@ -86,7 +84,6 @@ function useAutosave(sheetId: string) {
 function Editor({ sheet }: { sheet: Sheet }) {
   const sections = useEditor((s) => s.content.sections)
   const apply = useEditor((s) => s.apply)
-  const sensors = useDndSensors()
   const { status, retry } = useAutosave(sheet.id)
   const [dialog, setDialog] = useState<'edit' | 'duplicate' | 'pdf' | null>(null)
   const names = useLookups()
@@ -111,10 +108,6 @@ function Editor({ sheet }: { sheet: Sheet }) {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
-
-  const onDragEnd = ({ active, over }: DragEndEvent) => {
-    if (over && active.id !== over.id) apply((d) => ops.moveSection(d, String(active.id), String(over.id)))
-  }
 
   const remove = async () => {
     if (!confirm(`Excluir a planilha “${sheet.title}”? Essa ação não pode ser desfeita.`)) return
@@ -174,13 +167,9 @@ function Editor({ sheet }: { sheet: Sheet }) {
 
       <Toolbar />
 
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-        <SortableContext items={sections.map((s) => s.id)} strategy={verticalListSortingStrategy}>
-          <div className="flex flex-col gap-6">
-            {sections.map((s) => (isText(s) ? <TextSectionView key={s.id} section={s} /> : <TableView key={s.id} table={s} />))}
-          </div>
-        </SortableContext>
-      </DndContext>
+      <div className="flex flex-col gap-6">
+        {sections.map((s) => (isText(s) ? <TextSectionView key={s.id} section={s} /> : <TableView key={s.id} table={s} />))}
+      </div>
 
       <div className="grid grid-cols-2 gap-3">
         <button
@@ -329,9 +318,10 @@ function DuplicateDialog({ onClose, sheet }: { onClose: () => void; sheet: Sheet
   const navigate = useNavigate()
   const qc = useQueryClient()
   // A cópia costuma ser para outro cliente: sem clientes e sem data da poda.
+  // O título já mostra a numeração que será usada ("X (2)"), com base na lista em cache.
   const [meta, setMeta] = useState<SheetMeta>(() => ({
     ...metaOf(sheet),
-    title: `${sheet.title} (cópia)`,
+    title: uniqueTitle(sheet.title, (qc.getQueryData<SheetSummary[]>(['sheets']) ?? [sheet]).map((s) => s.title)),
     client_ids: [],
     pruning_date: null,
   }))

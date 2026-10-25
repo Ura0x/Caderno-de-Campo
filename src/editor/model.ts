@@ -192,11 +192,6 @@ function withoutKeys(style: CellStyle | undefined, keys: string[]): CellStyle | 
   return mergeStyle(style, Object.fromEntries(keys.map((k) => [k, undefined])))
 }
 
-function move<T>(list: T[], from: number, to: number) {
-  const [item] = list.splice(from, 1)
-  list.splice(to, 0, item)
-}
-
 export function resolve(content: SheetContent, sel: Selection | null) {
   if (!sel) return null
   const table = findTable(content, sel.tableId)
@@ -244,12 +239,6 @@ export const ops = {
   /** Remove uma seção (tabela ou bloco de texto). */
   removeSection(d: SheetContent, id: string) {
     d.sections = d.sections.filter((s) => s.id !== id)
-  },
-
-  moveSection(d: SheetContent, fromId: string, toId: string) {
-    const from = d.sections.findIndex((s) => s.id === fromId)
-    const to = d.sections.findIndex((s) => s.id === toId)
-    if (from >= 0 && to >= 0) move(d.sections, from, to)
   },
 
   /** Título de qualquer seção. */
@@ -341,14 +330,6 @@ export const ops = {
     if (!col) return
     const width = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, columnWidth(col) + dir * WIDTH_STEP))
     col.width = width === 1 ? undefined : width
-  },
-
-  moveColumn(d: SheetContent, tableId: string, fromId: string, toId: string) {
-    const cols = table(d, tableId)?.columns
-    if (!cols) return
-    const from = cols.findIndex((c) => c.id === fromId)
-    const to = cols.findIndex((c) => c.id === toId)
-    if (from >= 0 && to >= 0) move(cols, from, to)
   },
 
   applyStyle(d: SheetContent, sel: Selection, scope: Scope, patch: CellStyle) {
