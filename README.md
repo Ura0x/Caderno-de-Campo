@@ -15,7 +15,7 @@ npm run dev
 ## Configurando o Supabase (uma vez)
 
 1. Crie um projeto em <https://supabase.com>.
-2. **SQL Editor** → cole e execute `supabase/migrations/0001_init.sql`.
+2. **SQL Editor** → cole e execute, **em ordem**, cada arquivo de `supabase/migrations/` (`0001_init.sql`, `0002_pruning_date.sql`, …).
 3. **Project Settings → API**: copie a *Project URL* e a *publishable key* para o `.env`.
 4. **Login com Google**
    1. No [Google Cloud Console](https://console.cloud.google.com/apis/credentials), crie um *OAuth client ID* do tipo *Web application*.

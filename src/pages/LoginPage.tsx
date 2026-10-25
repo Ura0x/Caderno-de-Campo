@@ -23,7 +23,7 @@ export function LoginPage() {
           <Sprout size={30} />
         </div>
         <h1 className="text-xl font-semibold text-slate-900">Caderno de Campo</h1>
-        <p className="mt-1 mb-8 text-sm text-slate-500">Planilhas de manejo por cliente, cultura e safra.</p>
+        <p className="mt-1 mb-8 text-sm text-slate-500">Planilhas de manejo por cliente, cultura e variedade.</p>
         <button
           onClick={login}
           className="flex h-11 w-full items-center justify-center gap-3 rounded-lg border border-slate-300 bg-white font-medium text-slate-700 shadow-sm hover:bg-slate-50"

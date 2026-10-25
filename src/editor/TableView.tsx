@@ -14,19 +14,35 @@ import {
   useSortable,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { GripHorizontal, GripVertical, Plus, Trash2 } from 'lucide-react'
-import { useEffect, useLayoutEffect, useRef } from 'react'
+import { GripHorizontal, GripVertical, Minus, Plus, Trash2 } from 'lucide-react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { cx } from '@/components/ui'
-import type { Cell, Column, SheetTable } from '@/lib/types'
-import { V_ALIGN_FLEX, columnName, effectiveStyle, ops } from './model'
+import type { Block, Cell, Column, SheetTable } from '@/lib/types'
+import {
+  V_ALIGN_FLEX,
+  ZEBRA_BG,
+  blockFrames,
+  canRemoveLine,
+  cellsOf,
+  columnGroups,
+  columnName,
+  columnWidth,
+  effectiveStyle,
+  isZebraRow,
+  ops,
+  type Selection,
+} from './model'
 import { useEditor } from './store'
 
-const COLUMN_MIN_WIDTH = 140
+/** Largura mínima (px) de uma coluna de largura 1; abaixo disso a tabela rola na horizontal. */
+const COLUMN_MIN_WIDTH = 120
 
 export function useDndSensors() {
   return useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
   )
 }
 
@@ -36,14 +52,27 @@ export function TableView({ table }: { table: SheetTable }) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
     id: table.id,
   })
+  // Bloco onde está a célula selecionada (se for desta tabela).
+  const activeBlockId = useEditor((s) => (s.selection?.tableId === table.id ? s.selection.blockId : null))
+  const canRemove = useEditor((s) => s.selection?.tableId === table.id && canRemoveLine(s.content, s.selection))
 
   const onColumnDragEnd = ({ active, over }: DragEndEvent) => {
     if (over && active.id !== over.id) apply((d) => ops.moveColumn(d, table.id, String(active.id), String(over.id)))
   }
 
   const removeTable = () => {
-    if (confirm(`Excluir a tabela “${table.title || 'sem título'}”?`)) apply((d) => ops.removeTable(d, table.id))
+    if (confirm(`Excluir a tabela “${table.title || 'sem título'}”?`)) apply((d) => ops.removeSection(d, table.id))
   }
+
+  const frames = blockFrames(table.blocks)
+
+  // Numeração contínua das linhas de cada coluna ao longo dos blocos.
+  const offsets = new Map<string, number>()
+  const blockOffsets = table.blocks.map((b) => {
+    const start = Object.fromEntries(table.columns.map((c) => [c.id, offsets.get(c.id) ?? 0]))
+    for (const c of table.columns) offsets.set(c.id, (offsets.get(c.id) ?? 0) + cellsOf(b, c.id).length)
+    return start
+  })
 
   return (
     <section
@@ -81,101 +110,267 @@ export function TableView({ table }: { table: SheetTable }) {
       </header>
 
       <div className="overflow-x-auto p-3">
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onColumnDragEnd}>
-          <SortableContext items={table.columns.map((c) => c.id)} strategy={horizontalListSortingStrategy}>
-            <div
-              className="flex w-full items-stretch overflow-hidden rounded-md border border-slate-300"
-              style={{ minWidth: table.columns.length * COLUMN_MIN_WIDTH }}
-            >
-              {table.columns.map((col, i) => (
-                <ColumnView key={col.id} tableId={table.id} col={col} name={columnName(i)} />
-              ))}
+        <div
+          className="flex w-full flex-col gap-4"
+          style={{
+            minWidth: table.columns.reduce((n, c) => n + columnWidth(c), 0) * COLUMN_MIN_WIDTH,
+          }}
+        >
+          {frames.map((frame, fi) => (
+            <div key={frame[0].block.id}>
+              <FrameCaption
+                tableId={table.id}
+                block={frame[0].block}
+                active={frame.some((x) => x.block.id === activeBlockId)}
+              />
+              <div className="overflow-hidden rounded-md border border-slate-300">
+                {fi === 0 && (
+                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onColumnDragEnd}>
+                    <SortableContext items={table.columns.map((c) => c.id)} strategy={horizontalListSortingStrategy}>
+                      <div className="flex border-b border-slate-300">
+                        {table.columns.map((col, i) => (
+                          <ColumnHeader key={col.id} col={col} name={columnName(i)} />
+                        ))}
+                      </div>
+                    </SortableContext>
+                  </DndContext>
+                )}
+                {frame.map(({ block, index }, i) => (
+                  <BlockView
+                    key={block.id}
+                    table={table}
+                    block={block}
+                    offsets={blockOffsets[index]}
+                    separated={i > 0}
+                  />
+                ))}
+              </div>
+              {frames.length > 1 && frame.some((x) => x.block.id === activeBlockId) && (
+                <div className="flex justify-end pt-1">
+                  <button
+                    onClick={() =>
+                      confirm('Excluir este quadro e tudo o que está nele?') &&
+                      apply((d) =>
+                        ops.removeFrame(d, {
+                          tableId: table.id,
+                          blockId: frame[0].block.id,
+                        }),
+                      )
+                    }
+                    className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-slate-500 hover:bg-red-50 hover:text-red-600"
+                  >
+                    <Trash2 size={13} /> Excluir quadro
+                  </button>
+                </div>
+              )}
             </div>
-          </SortableContext>
-        </DndContext>
+          ))}
+        </div>
       </div>
 
       <footer className="flex flex-wrap gap-2 px-3 pb-3">
-        <button
-          onClick={() => apply((d) => ops.addRow(d, table.id))}
-          className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-50"
+        <FooterButton
+          onClick={() => apply((d) => ops.addProduct(d, table.id, useEditor.getState().selection))}
+          title={activeBlockId ? 'Adiciona logo abaixo da linha selecionada' : 'Adiciona no fim do último quadro'}
         >
-          <Plus size={16} /> Linha em todas as colunas
-        </button>
-        <button
-          onClick={() => apply((d) => void ops.addColumn(d, table.id))}
-          className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-50"
+          <Plus size={16} /> Produto
+        </FooterButton>
+        <FooterButton
+          onClick={() => {
+            const sel = useEditor.getState().selection
+            if (sel && confirm('Excluir esta linha (produto e dose)?')) apply((d) => ops.removeLine(d, sel))
+          }}
+          disabled={!canRemove}
+          title={canRemove ? 'Exclui a linha selecionada' : 'Clique num produto ou dose para excluir a linha'}
+          danger
         >
-          <Plus size={16} /> Coluna
-        </button>
+          <Minus size={16} /> Excluir linha
+        </FooterButton>
+        <FooterButton
+          onClick={() => apply((d) => void ops.addFrame(d, table.id, activeBlockId ?? undefined))}
+          title="Novo quadro separado, repetindo o cabeçalho (ex.: mais um período)"
+        >
+          <Plus size={16} /> Quadro
+        </FooterButton>
       </footer>
     </section>
   )
 }
 
-function ColumnView({ tableId, col, name }: { tableId: string; col: Column; name: string }) {
-  const apply = useEditor((s) => s.apply)
-  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
-    id: col.id,
-  })
-
+function FooterButton({
+  onClick,
+  title,
+  disabled,
+  danger,
+  children,
+}: {
+  onClick: () => void
+  title?: string
+  disabled?: boolean
+  danger?: boolean
+  children: React.ReactNode
+}) {
   return (
-    <div
-      ref={setNodeRef}
-      style={{ transform: CSS.Translate.toString(transform), transition }}
+    <button
+      onClick={onClick}
+      title={title}
+      disabled={disabled}
       className={cx(
-        'flex min-w-0 flex-1 basis-0 flex-col border-r border-slate-300 bg-white last:border-r-0',
-        isDragging && 'relative z-10 opacity-90 shadow-lg',
+        'flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-sm font-medium disabled:opacity-35',
+        danger ? 'text-red-600 enabled:hover:bg-red-50' : 'text-emerald-700 hover:bg-emerald-50',
       )}
     >
-      <button
-        ref={setActivatorNodeRef}
-        {...attributes}
-        {...listeners}
-        className="group flex h-6 cursor-grab touch-none items-center justify-center gap-1 border-b border-slate-200 bg-slate-50 active:cursor-grabbing"
-        aria-label={`Coluna ${name} (arrastar para mover)`}
-      >
-        <span className="text-xs font-semibold text-slate-500">{name}</span>
-        <GripHorizontal size={14} className="text-slate-300 group-hover:text-slate-500" />
-      </button>
-      <div className="flex grow flex-col">
-        {col.cells.map((cell, i) => (
-          <CellView key={cell.id} tableId={tableId} col={col} cell={cell} index={i} label={`${name}${i + 1}`} />
-        ))}
-      </div>
-      <button
-        onClick={() => apply((d) => ops.insertCell(d, tableId, col.id, col.cells.length))}
-        className="flex h-6 items-center justify-center gap-0.5 border-t border-slate-200 text-xs text-slate-400 hover:bg-emerald-50 hover:text-emerald-700"
-        title="Adicionar célula nesta coluna"
-      >
-        <Plus size={12} /> célula
-      </button>
+      {children}
+    </button>
+  )
+}
+
+/** Legenda acima do quadro: aparece se tiver texto ou se o quadro estiver em edição. */
+function FrameCaption({ tableId, block, active }: { tableId: string; block: Block; active: boolean }) {
+  const apply = useEditor((s) => s.apply)
+  const [focused, setFocused] = useState(false)
+  if (!block.caption && !active && !focused) return null
+  return (
+    <div className="mb-1.5 flex items-start gap-2">
+      <span className="mt-1.5 h-4 w-1 shrink-0 rounded-full bg-emerald-600" />
+      <textarea
+        rows={1}
+        value={block.caption ?? ''}
+        onChange={(e) =>
+          apply(
+            (d) => ops.setCaption(d, { tableId, blockId: block.id }, e.target.value.replace(/\n/g, ' ')),
+            `caption:${block.id}`,
+          )
+        }
+        onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        placeholder="Adicionar legenda acima do quadro…"
+        className="field-sizing-content min-w-0 flex-1 resize-none rounded-md bg-transparent px-1 py-0.5 text-sm font-semibold text-emerald-800 outline-none placeholder:font-normal placeholder:text-slate-400 focus:bg-emerald-50/60 md:text-base"
+      />
+    </div>
+  )
+}
+
+function ColumnHeader({ col, name }: { col: Column; name: string }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: col.id })
+  return (
+    <button
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Translate.toString(transform),
+        transition,
+        flex: `${columnWidth(col)} 1 0%`,
+      }}
+      {...attributes}
+      {...listeners}
+      className={cx(
+        'group flex h-6 min-w-0 cursor-grab touch-none items-center justify-center gap-1 border-r border-slate-200 bg-slate-50 last:border-r-0 active:cursor-grabbing',
+        isDragging && 'relative z-10 bg-emerald-50 shadow-md',
+      )}
+      aria-label={`Coluna ${name} (arrastar para mover)`}
+    >
+      <span className="text-xs font-semibold text-slate-500">{name}</span>
+      <GripHorizontal size={14} className="text-slate-300 group-hover:text-slate-500" />
+    </button>
+  )
+}
+
+function BlockView({
+  table,
+  block,
+  offsets,
+  separated,
+}: {
+  table: SheetTable
+  block: Block
+  offsets: Record<string, number>
+  separated: boolean
+}) {
+  const groups = columnGroups(block, table.columns)
+
+  return (
+    <div className={cx('flex items-stretch', separated && 'border-t-2 border-slate-400')}>
+      {groups.map((group, gi) => {
+        const template = group.cols.map(({ col }) => `minmax(0, ${columnWidth(col)}fr)`).join(' ')
+        const weight = group.cols.reduce((n, { col }) => n + columnWidth(col), 0)
+        return (
+          <div
+            key={group.cols[0].col.id}
+            className={cx('flex min-w-0 flex-col', gi < groups.length - 1 && 'border-r border-slate-300')}
+            style={{ flex: `${weight} 1 0%` }}
+          >
+            {/* Colunas do grupo dividem as mesmas linhas; as linhas esticam para ocupar a altura do bloco. */}
+            <div
+              className="grid grow"
+              style={{
+                gridTemplateColumns: template,
+                gridTemplateRows: `repeat(${group.rows}, auto)`,
+                gridAutoFlow: 'column',
+              }}
+            >
+              {group.cols.flatMap(({ col, index }, ci) =>
+                cellsOf(block, col.id).map((cell, i) => (
+                  <CellView
+                    key={cell.id}
+                    at={{
+                      tableId: table.id,
+                      blockId: block.id,
+                      colId: col.id,
+                      cellIndex: i,
+                    }}
+                    col={col}
+                    cell={cell}
+                    number={offsets[col.id] + i + 1}
+                    name={columnName(index)}
+                    rowGroup={group.cols.length > 1 ? group.cols.map((c) => c.col.id) : [col.id]}
+                    zebra={isZebraRow(group.rows, i)}
+                    borderBottom={i < group.rows - 1}
+                    borderRight={ci < group.cols.length - 1}
+                  />
+                )),
+              )}
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
 
 function CellView({
-  tableId,
+  at,
   col,
   cell,
-  index,
-  label,
+  number,
+  name,
+  rowGroup,
+  zebra,
+  borderBottom,
+  borderRight,
 }: {
-  tableId: string
+  at: Selection
   col: Column
   cell: Cell
-  index: number
-  label: string
+  number: number
+  name: string
+  /** Colunas que formam a "linha" desta célula (grupo alinhado). */
+  rowGroup: string[]
+  /** Linha alternada de uma lista (fundo sutil, se a célula não tiver cor própria). */
+  zebra: boolean
+  borderBottom: boolean
+  borderRight: boolean
 }) {
   const apply = useEditor((s) => s.apply)
   const select = useEditor((s) => s.select)
   // Retorna string para evitar re-render de todas as células a cada mudança de seleção.
   const mark = useEditor((s) => {
     const sel = s.selection
-    if (!sel || sel.tableId !== tableId) return ''
-    if (sel.colId === col.id && sel.cellIndex === index) return 'selected'
-    if (s.scope === 'column' && sel.colId === col.id) return 'scope'
-    if (s.scope === 'row' && sel.cellIndex === index) return 'scope'
+    if (!sel || sel.tableId !== at.tableId) return ''
+    const sameBlock = sel.blockId === at.blockId
+    if (sameBlock && sel.colId === at.colId && sel.cellIndex === at.cellIndex) return 'selected'
+    if (s.scope === 'column' && sel.colId === at.colId) return 'scope'
+    if (s.scope === 'row' && sameBlock && sel.cellIndex === at.cellIndex && rowGroup.includes(sel.colId)) return 'scope'
     return ''
   })
   const ref = useRef<HTMLTextAreaElement>(null)
@@ -184,12 +379,17 @@ function CellView({
   return (
     <div
       className={cx(
-        'relative flex min-h-9 grow cursor-text border-b border-slate-200 last:border-b-0',
+        'relative flex min-h-9 cursor-text border-slate-200',
+        borderBottom && 'border-b',
+        borderRight && 'border-r',
         mark === 'selected' && 'z-[1] outline-2 -outline-offset-2 outline-emerald-600',
         mark === 'scope' && 'z-[1] outline-2 -outline-offset-2 outline-emerald-400 outline-dashed',
       )}
-      style={{ backgroundColor: style.bg, alignItems: V_ALIGN_FLEX[style.vAlign ?? 'top'] }}
-      title={label}
+      style={{
+        backgroundColor: style.bg ?? (zebra ? ZEBRA_BG : undefined),
+        alignItems: V_ALIGN_FLEX[style.vAlign ?? 'top'],
+      }}
+      title={`${name}${number}`}
       onMouseDown={(e) => {
         if (e.target !== ref.current) {
           e.preventDefault()
@@ -201,13 +401,13 @@ function CellView({
         className="pointer-events-none absolute top-0.5 right-1 text-[10px] leading-none font-medium opacity-40 select-none"
         style={{ color: style.color }}
       >
-        {index + 1}
+        {number}
       </span>
       <AutoTextarea
         ref={ref}
         value={cell.raw}
-        onChange={(raw) => apply((d) => ops.setCell(d, tableId, col.id, index, raw), `cell:${cell.id}`)}
-        onFocus={() => select({ tableId, colId: col.id, cellIndex: index })}
+        onChange={(raw) => apply((d) => ops.setCell(d, at, raw), `cell:${cell.id}`)}
+        onFocus={() => select(at)}
         style={{
           color: style.color,
           fontWeight: style.bold ? 700 : undefined,

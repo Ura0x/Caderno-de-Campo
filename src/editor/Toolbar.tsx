@@ -13,14 +13,13 @@ import {
   Plus,
   PaintBucket,
   Redo2,
-  Rows3,
   Type,
   Undo2,
 } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { cx } from '@/components/ui'
 import type { Align, CellStyle, VAlign } from '@/lib/types'
-import { DEFAULT_FONT_SIZE, FONT_SIZES, effectiveStyle, ops, resolve, stepFontSize, type Scope } from './model'
+import { DEFAULT_FONT_SIZE, FONT_SIZES, MAX_WIDTH, MIN_WIDTH, columnWidth, effectiveStyle, ops, resolve, stepFontSize, type Scope } from './model'
 import { useEditor } from './store'
 
 const BG_COLORS = ['#ffffff', '#f1f5f9', '#e2e8f0', '#fef9c3', '#fde68a', '#fed7aa', '#fecaca', '#fbcfe8', '#e9d5ff', '#bfdbfe', '#a5f3fc', '#bbf7d0', '#d9f99d', '#047857', '#1e3a8a', '#0f172a']
@@ -155,17 +154,9 @@ export function Toolbar() {
         </Tool>
         <Sep />
 
-        <Group icon={<Rows3 size={16} />} label="Célula">
-          <TextTool disabled={off} onClick={run((sel) => apply((d) => ops.insertCell(d, sel.tableId, sel.colId, sel.cellIndex + 1)))}>+ abaixo</TextTool>
-          <TextTool disabled={off || target.col.cells.length < 2} onClick={run((sel) => apply((d) => ops.removeCell(d, sel.tableId, sel.colId, sel.cellIndex)))}>Excluir</TextTool>
-        </Group>
-        <Group icon={<Rows3 size={16} />} label="Linha">
-          <TextTool disabled={off} onClick={run((sel) => apply((d) => ops.addRow(d, sel.tableId, sel.cellIndex)))}>+ abaixo</TextTool>
-          <TextTool disabled={off} onClick={run((sel) => apply((d) => ops.removeRow(d, sel.tableId, sel.cellIndex)))}>Excluir</TextTool>
-        </Group>
-        <Group icon={<Columns3 size={16} />} label="Coluna">
-          <TextTool disabled={off} onClick={run((sel) => apply((d) => void ops.addColumn(d, sel.tableId, sel.colId)))}>+ à direita</TextTool>
-          <TextTool disabled={off || target.table.columns.length < 2} onClick={run((sel) => apply((d) => ops.removeColumn(d, sel.tableId, sel.colId)))}>Excluir</TextTool>
+        <Group icon={<Columns3 size={16} />} label="Largura da coluna">
+          <TextTool disabled={off || columnWidth(target.col) <= MIN_WIDTH} onClick={run((sel) => apply((d) => ops.resizeColumn(d, sel.tableId, sel.colId, -1)))}>Estreitar</TextTool>
+          <TextTool disabled={off || columnWidth(target.col) >= MAX_WIDTH} onClick={run((sel) => apply((d) => ops.resizeColumn(d, sel.tableId, sel.colId, 1)))}>Alargar</TextTool>
         </Group>
       </div>
     </div>

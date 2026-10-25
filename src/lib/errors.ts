@@ -11,7 +11,6 @@ interface DbError {
 const DUPLICATES: Record<string, string> = {
   crops_user_id_name_key: 'Já existe uma cultura com esse nome.',
   varieties_crop_id_name_key: 'Essa cultura já tem uma variedade com esse nome.',
-  seasons_user_id_name_key: 'Já existe uma safra com esse nome.',
   sheet_clients_pkey: 'Esse cliente já está vinculado à planilha.',
 }
 

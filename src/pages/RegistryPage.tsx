@@ -1,14 +1,12 @@
-import { CalendarRange, Pencil, Plus, Sprout, Trash2, Users, X } from 'lucide-react'
+import { Pencil, Plus, Sprout, Trash2, Users, X } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Button, Dialog, EmptyState, ErrorText, Field, Input, PageLoader, Textarea, cx } from '@/components/ui'
-import { useClients, useCrops, useDeleteRow, useSaveRow, useSeasons, useVarieties } from '@/lib/api'
-import { formatDate } from '@/lib/lookups'
-import type { Client, Crop, Season, Variety } from '@/lib/types'
+import { useClients, useCrops, useDeleteRow, useSaveRow, useVarieties } from '@/lib/api'
+import type { Client, Crop, Variety } from '@/lib/types'
 
 const TABS = [
   { id: 'clients', label: 'Clientes', icon: Users },
   { id: 'crops', label: 'Culturas', icon: Sprout },
-  { id: 'seasons', label: 'Safras', icon: CalendarRange },
 ] as const
 
 type Tab = (typeof TABS)[number]['id']
@@ -36,7 +34,6 @@ export function RegistryPage() {
       </div>
       {tab === 'clients' && <ClientsTab />}
       {tab === 'crops' && <CropsTab />}
-      {tab === 'seasons' && <SeasonsTab />}
     </div>
   )
 }
@@ -235,73 +232,5 @@ function CropCard({ crop, varieties, onDelete }: { crop: Crop; varieties: Variet
       </form>
       <ErrorText error={save.error ?? remove.error} />
     </li>
-  )
-}
-
-// Safras ---------------------------------------------------------------------
-
-function SeasonsTab() {
-  const seasons = useSeasons()
-  const save = useSaveRow<Season>('seasons')
-  const remove = useDeleteRow('seasons')
-  const [form, setForm] = useState({ name: '', start_date: '', end_date: '' })
-
-  if (seasons.isPending) return <PageLoader />
-
-  const add = async (e: FormEvent) => {
-    e.preventDefault()
-    await save.mutateAsync({
-      name: form.name.trim(),
-      start_date: form.start_date || null,
-      end_date: form.end_date || null,
-    })
-    setForm({ name: '', start_date: '', end_date: '' })
-  }
-
-  return (
-    <div className="flex flex-col gap-3">
-      <form onSubmit={add} className="grid grid-cols-2 items-end gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-[2fr_1fr_1fr_auto]">
-        <Field label="Safra" className="col-span-2 md:col-span-1">
-          <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Ex.: 2025/2026" />
-        </Field>
-        <Field label="Início (opcional)">
-          <Input type="date" value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} />
-        </Field>
-        <Field label="Fim (opcional)">
-          <Input type="date" value={form.end_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} />
-        </Field>
-        <Button type="submit" variant="primary" className="col-span-2 justify-center md:col-span-1" disabled={!form.name.trim() || save.isPending}>
-          <Plus size={18} /> Adicionar
-        </Button>
-      </form>
-      <ErrorText error={seasons.error ?? save.error ?? remove.error} />
-      {seasons.data?.length === 0 ? (
-        <EmptyState icon={<CalendarRange size={24} />} title="Nenhuma safra cadastrada" />
-      ) : (
-        <ul className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white shadow-sm">
-          {seasons.data?.map((s) => (
-            <li key={s.id} className="flex items-center gap-3 px-4 py-3">
-              <div className="flex-1">
-                <p className="font-medium text-slate-900">{s.name}</p>
-                {(s.start_date || s.end_date) && (
-                  <p className="text-sm text-slate-500">
-                    {s.start_date ? formatDate(s.start_date + 'T12:00') : '…'} até {s.end_date ? formatDate(s.end_date + 'T12:00') : '…'}
-                  </p>
-                )}
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Excluir"
-                className="hover:text-red-600"
-                onClick={() => confirmDelete(`a safra “${s.name}”`) && remove.mutate(s.id)}
-              >
-                <Trash2 size={16} />
-              </Button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
   )
 }

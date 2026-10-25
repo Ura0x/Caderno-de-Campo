@@ -1,16 +1,13 @@
-import { Check, Plus, Search } from 'lucide-react'
+import { Check, Plus, Search, X } from 'lucide-react'
 import { useState } from 'react'
-import { useClients, useCrops, useSaveRow, useSeasons, useVarieties } from '@/lib/api'
+import { useClients, useCrops, useSaveRow, useVarieties } from '@/lib/api'
 import type { Client, SheetMeta } from '@/lib/types'
-import { ErrorText, Field, Input, Select, cx } from './ui'
+import { Button, ErrorText, Field, Input, Select, cx } from './ui'
 
-export const emptyMeta = (): SheetMeta => ({ title: '', crop_id: null, variety_id: null, season_id: null, client_ids: [] })
-
-/** Formulário de dados da planilha: título, clientes, cultura, variedade e safra. */
+/** Formulário de dados da planilha: título, clientes, cultura, variedade e data da poda. */
 export function SheetMetaForm({ value, onChange }: { value: SheetMeta; onChange: (v: SheetMeta) => void }) {
   const crops = useCrops().data ?? []
   const varieties = (useVarieties().data ?? []).filter((v) => v.crop_id === value.crop_id)
-  const seasons = useSeasons().data ?? []
   const set = (patch: Partial<SheetMeta>) => onChange({ ...value, ...patch })
 
   return (
@@ -26,7 +23,7 @@ export function SheetMetaForm({ value, onChange }: { value: SheetMeta; onChange:
       <Field label="Clientes (opcional)">
         <ClientPicker value={value.client_ids} onChange={(client_ids) => set({ client_ids })} />
       </Field>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Cultura">
           <Select
             value={value.crop_id ?? ''}
@@ -54,19 +51,28 @@ export function SheetMetaForm({ value, onChange }: { value: SheetMeta; onChange:
             ))}
           </Select>
         </Field>
-        <Field label="Safra">
-          <Select value={value.season_id ?? ''} onChange={(e) => set({ season_id: e.target.value || null })}>
-            <option value="">—</option>
-            {seasons.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </Select>
-        </Field>
       </div>
+      <Field label="Data da poda" className="sm:max-w-60">
+        <div className="flex gap-2">
+          <Input
+            type="date"
+            value={value.pruning_date ?? ''}
+            onChange={(e) => set({ pruning_date: e.target.value || null })}
+          />
+          <Button
+            size="icon"
+            className="h-10 w-10"
+            onClick={() => set({ pruning_date: null })}
+            disabled={!value.pruning_date}
+            aria-label="Apagar data da poda"
+            title="Apagar data da poda"
+          >
+            <X size={16} />
+          </Button>
+        </div>
+      </Field>
       {crops.length === 0 && (
-        <p className="text-xs text-slate-500">Cadastre culturas, variedades e safras na aba Cadastros.</p>
+        <p className="text-xs text-slate-500">Cadastre culturas e variedades na aba Cadastros.</p>
       )}
     </div>
   )

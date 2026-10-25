@@ -1,9 +1,9 @@
 import { CalendarDays, FileSpreadsheet, Plus, Search, SlidersHorizontal, UserX, Users, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { SheetMetaForm, emptyMeta } from '@/components/SheetMetaForm'
-import { Button, Dialog, EmptyState, ErrorText, Field, Input, PageLoader, Select, cx } from '@/components/ui'
-import { useClients, useCreateSheet, useCrops, useSeasons, useSheets, useVarieties } from '@/lib/api'
+import { Link } from 'react-router-dom'
+import { NewSheetDialog } from '@/components/NewSheetDialog'
+import { Button, EmptyState, ErrorText, Field, Input, PageLoader, Select, cx } from '@/components/ui'
+import { useClients, useCrops, useSheets, useVarieties } from '@/lib/api'
 import { formatDate, useLookups } from '@/lib/lookups'
 import type { SheetSummary } from '@/lib/types'
 
@@ -14,12 +14,11 @@ interface Filters {
   noClient: boolean
   crop: string
   variety: string
-  season: string
   from: string
   to: string
 }
 
-const noFilters: Filters = { q: '', client: '', noClient: false, crop: '', variety: '', season: '', from: '', to: '' }
+const noFilters: Filters = { q: '', client: '', noClient: false, crop: '', variety: '', from: '', to: '' }
 
 function matches(s: SheetSummary, f: Filters) {
   const day = s.created_at.slice(0, 10)
@@ -29,7 +28,6 @@ function matches(s: SheetSummary, f: Filters) {
     (!f.noClient || s.client_ids.length === 0) &&
     (!f.crop || s.crop_id === f.crop) &&
     (!f.variety || s.variety_id === f.variety) &&
-    (!f.season || s.season_id === f.season) &&
     (!f.from || day >= f.from) &&
     (!f.to || day <= f.to)
   )
@@ -113,7 +111,7 @@ export function SheetsPage() {
         </ul>
       )}
 
-      <NewSheetDialog open={creating} onClose={() => setCreating(false)} sheets={sheets.data ?? []} />
+      {creating && <NewSheetDialog onClose={() => setCreating(false)} sheets={sheets.data ?? []} />}
     </div>
   )
 }
@@ -122,11 +120,10 @@ function FilterPanel({ filters, onChange }: { filters: Filters; onChange: (f: Fi
   const clients = useClients().data ?? []
   const crops = useCrops().data ?? []
   const varieties = (useVarieties().data ?? []).filter((v) => !filters.crop || v.crop_id === filters.crop)
-  const seasons = useSeasons().data ?? []
   const set = (patch: Partial<Filters>) => onChange({ ...filters, ...patch })
 
   return (
-    <div className="grid grid-cols-2 gap-3 border-t border-slate-100 pt-3 md:grid-cols-3 lg:grid-cols-6">
+    <div className="grid grid-cols-2 gap-3 border-t border-slate-100 pt-3 md:grid-cols-3 lg:grid-cols-5">
       <Field label="Cliente">
         <Select value={filters.client} onChange={(e) => set({ client: e.target.value, noClient: false })}>
           <option value="">Todos</option>
@@ -151,14 +148,6 @@ function FilterPanel({ filters, onChange }: { filters: Filters; onChange: (f: Fi
           ))}
         </Select>
       </Field>
-      <Field label="Safra">
-        <Select value={filters.season} onChange={(e) => set({ season: e.target.value })}>
-          <option value="">Todas</option>
-          {seasons.map((s) => (
-            <option key={s.id} value={s.id}>{s.name}</option>
-          ))}
-        </Select>
-      </Field>
       <Field label="Criada de">
         <Input type="date" value={filters.from} onChange={(e) => set({ from: e.target.value })} />
       </Field>
@@ -179,7 +168,6 @@ function SheetCard({ sheet }: { sheet: SheetSummary }) {
   const clientNames = sheet.client_ids.map((id) => names.clients.get(id)).filter(Boolean)
   const crop = sheet.crop_id && names.crops.get(sheet.crop_id)
   const variety = sheet.variety_id && names.varieties.get(sheet.variety_id)
-  const season = sheet.season_id && names.seasons.get(sheet.season_id)
 
   return (
     <li>
@@ -191,7 +179,6 @@ function SheetCard({ sheet }: { sheet: SheetSummary }) {
         <div className="flex flex-wrap gap-1.5 text-xs font-medium">
           {crop && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-emerald-800">{crop}</span>}
           {variety && <span className="rounded-full bg-lime-50 px-2 py-0.5 text-lime-800">{variety}</span>}
-          {season && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-800">Safra {season}</span>}
         </div>
         <div className="mt-auto flex flex-col gap-1 text-sm text-slate-500">
           {clientNames.length ? (
@@ -210,54 +197,5 @@ function SheetCard({ sheet }: { sheet: SheetSummary }) {
         </div>
       </Link>
     </li>
-  )
-}
-
-function NewSheetDialog({ open, onClose, sheets }: { open: boolean; onClose: () => void; sheets: SheetSummary[] }) {
-  const navigate = useNavigate()
-  const create = useCreateSheet()
-  const [meta, setMeta] = useState(emptyMeta)
-  const [copyFrom, setCopyFrom] = useState('')
-
-  const close = () => {
-    setMeta(emptyMeta())
-    setCopyFrom('')
-    create.reset()
-    onClose()
-  }
-
-  const submit = async () => {
-    const id = await create.mutateAsync({ meta, copyFromId: copyFrom || undefined })
-    close()
-    navigate(`/planilhas/${id}`)
-  }
-
-  return (
-    <Dialog
-      open={open}
-      onClose={close}
-      title="Nova planilha"
-      footer={
-        <>
-          <Button onClick={close}>Cancelar</Button>
-          <Button variant="primary" onClick={submit} disabled={!meta.title.trim() || create.isPending}>
-            Criar
-          </Button>
-        </>
-      }
-    >
-      <div className="flex flex-col gap-4">
-        <SheetMetaForm value={meta} onChange={setMeta} />
-        <Field label="Copiar tabelas de outra planilha (opcional)">
-          <Select value={copyFrom} onChange={(e) => setCopyFrom(e.target.value)}>
-            <option value="">Começar vazia</option>
-            {sheets.map((s) => (
-              <option key={s.id} value={s.id}>{s.title}</option>
-            ))}
-          </Select>
-        </Field>
-        <ErrorText error={create.error} />
-      </div>
-    </Dialog>
   )
 }

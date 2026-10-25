@@ -1,18 +1,19 @@
 import { DndContext, closestCenter, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
-import { ArrowLeft, Check, CloudOff, Copy, FileDown, Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, Check, CloudOff, Copy, FileDown, Loader2, Pencil, StickyNote, Table2, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { SheetMetaForm } from '@/components/SheetMetaForm'
 import { Button, Dialog, ErrorText, Field, PageLoader, cx } from '@/components/ui'
-import { createSheet, saveSheetContent, useDeleteSheet, useSheet, useUpdateSheetMeta } from '@/lib/api'
-import { formatDate, useLookups } from '@/lib/lookups'
+import { createSheet, saveSheetContent, useDeleteSheet, useRenameSheet, useSheet, useUpdateSheetMeta } from '@/lib/api'
+import { formatDate, formatDay, useLookups } from '@/lib/lookups'
 import type { Sheet, SheetMeta } from '@/lib/types'
-import { ops } from '@/editor/model'
+import { isText, ops } from '@/editor/model'
 import type { Orientation } from '@/editor/pdf'
 import { useEditor } from '@/editor/store'
 import { TableView, useDndSensors } from '@/editor/TableView'
+import { TextSectionView } from '@/editor/TextSectionView'
 import { Toolbar } from '@/editor/Toolbar'
 
 type SaveStatus = 'saved' | 'pending' | 'saving' | 'error'
@@ -83,7 +84,7 @@ function useAutosave(sheetId: string) {
 }
 
 function Editor({ sheet }: { sheet: Sheet }) {
-  const tables = useEditor((s) => s.content.tables)
+  const sections = useEditor((s) => s.content.sections)
   const apply = useEditor((s) => s.apply)
   const sensors = useDndSensors()
   const { status, retry } = useAutosave(sheet.id)
@@ -91,6 +92,13 @@ function Editor({ sheet }: { sheet: Sheet }) {
   const names = useLookups()
   const navigate = useNavigate()
   const deleteSheet = useDeleteSheet()
+  // Planilha recém-criada (?nova=1): o título já vem selecionado para editar.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [isNew] = useState(() => searchParams.has('nova'))
+
+  useEffect(() => {
+    if (searchParams.has('nova')) setSearchParams({}, { replace: true })
+  }, [searchParams, setSearchParams])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -105,7 +113,7 @@ function Editor({ sheet }: { sheet: Sheet }) {
   }, [])
 
   const onDragEnd = ({ active, over }: DragEndEvent) => {
-    if (over && active.id !== over.id) apply((d) => ops.moveTable(d, String(active.id), String(over.id)))
+    if (over && active.id !== over.id) apply((d) => ops.moveSection(d, String(active.id), String(over.id)))
   }
 
   const remove = async () => {
@@ -118,7 +126,7 @@ function Editor({ sheet }: { sheet: Sheet }) {
   const tags = [
     sheet.crop_id && names.crops.get(sheet.crop_id),
     sheet.variety_id && names.varieties.get(sheet.variety_id),
-    sheet.season_id && `Safra ${names.seasons.get(sheet.season_id) ?? ''}`,
+    sheet.pruning_date && `Poda em ${formatDay(sheet.pruning_date)}`,
   ].filter(Boolean)
 
   return (
@@ -129,12 +137,22 @@ function Editor({ sheet }: { sheet: Sheet }) {
             <ArrowLeft size={20} />
           </Link>
           <div className="min-w-0 flex-1">
-            <h1 className="text-xl font-semibold break-words text-slate-900 md:text-2xl">{sheet.title}</h1>
-            <p className="mt-0.5 text-sm text-slate-500">
-              {clientNames.length ? clientNames.join(', ') : 'Sem cliente'}
-              {tags.length > 0 && ` · ${tags.join(' · ')}`}
+            <TitleInput sheet={sheet} autoFocus={isNew} />
+            <button
+              onClick={() => setDialog('edit')}
+              className="mt-0.5 rounded px-1 text-left text-sm text-slate-500 hover:bg-slate-200/60"
+              title="Editar clientes, cultura, variedade e data da poda"
+            >
+              {clientNames.length || tags.length ? (
+                <>
+                  {clientNames.length ? clientNames.join(', ') : <span className="text-orange-600">Sem cliente</span>}
+                  {tags.length > 0 && ` · ${tags.join(' · ')}`}
+                </>
+              ) : (
+                <span className="font-medium text-emerald-700">+ Definir cliente, cultura, variedade e data da poda</span>
+              )}
               {` · criada em ${formatDate(sheet.created_at)}`}
-            </p>
+            </button>
           </div>
           <SaveIndicator status={status} onRetry={retry} />
         </div>
@@ -157,21 +175,27 @@ function Editor({ sheet }: { sheet: Sheet }) {
       <Toolbar />
 
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-        <SortableContext items={tables.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+        <SortableContext items={sections.map((s) => s.id)} strategy={verticalListSortingStrategy}>
           <div className="flex flex-col gap-6">
-            {tables.map((t) => (
-              <TableView key={t.id} table={t} />
-            ))}
+            {sections.map((s) => (isText(s) ? <TextSectionView key={s.id} section={s} /> : <TableView key={s.id} table={s} />))}
           </div>
         </SortableContext>
       </DndContext>
 
-      <button
-        onClick={() => apply((d) => void ops.addTable(d))}
-        className="flex items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-slate-300 py-6 font-medium text-slate-500 hover:border-emerald-600 hover:bg-emerald-50 hover:text-emerald-700"
-      >
-        <Plus size={20} /> Adicionar tabela
-      </button>
+      <div className="grid grid-cols-2 gap-3">
+        <button
+          onClick={() => apply((d) => void ops.addTable(d))}
+          className="flex items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-slate-300 py-6 font-medium text-slate-500 hover:border-emerald-600 hover:bg-emerald-50 hover:text-emerald-700"
+        >
+          <Table2 size={20} /> Adicionar tabela
+        </button>
+        <button
+          onClick={() => apply((d) => void ops.addText(d))}
+          className="flex items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-slate-300 py-6 font-medium text-slate-500 hover:border-amber-500 hover:bg-amber-50 hover:text-amber-700"
+        >
+          <StickyNote size={20} /> Adicionar texto
+        </button>
+      </div>
 
       {dialog === 'edit' && <EditMetaDialog onClose={() => setDialog(null)} sheet={sheet} />}
       {dialog === 'duplicate' && <DuplicateDialog onClose={() => setDialog(null)} sheet={sheet} />}
@@ -183,9 +207,61 @@ function Editor({ sheet }: { sheet: Sheet }) {
           { label: 'Cliente', value: clientNames.join(', ') },
           { label: 'Cultura', value: (sheet.crop_id && names.crops.get(sheet.crop_id)) || '' },
           { label: 'Variedade', value: (sheet.variety_id && names.varieties.get(sheet.variety_id)) || '' },
-          { label: 'Safra', value: (sheet.season_id && names.seasons.get(sheet.season_id)) || '' },
-        ].filter((d) => d.value)}
+        ]
+          .filter((d) => d.value)
+          // Sempre impressa: em branco, é preenchida à caneta.
+          .concat({ label: 'Data da poda', value: sheet.pruning_date ? formatDay(sheet.pruning_date) : '' })}
       />
+    </div>
+  )
+}
+
+/** Título editável direto no cabeçalho; salva ao sair do campo ou com Enter, Esc descarta. */
+function TitleInput({ sheet, autoFocus }: { sheet: Sheet; autoFocus: boolean }) {
+  const rename = useRenameSheet(sheet.id)
+  const [value, setValue] = useState(sheet.title)
+  const [savedTitle, setSavedTitle] = useState(sheet.title)
+  const ref = useRef<HTMLInputElement>(null)
+  const cancelled = useRef(false)
+
+  // Acompanha o título salvo (ex.: alterado pelo diálogo "Dados").
+  if (sheet.title !== savedTitle) {
+    setSavedTitle(sheet.title)
+    setValue(sheet.title)
+  }
+
+  useEffect(() => {
+    if (autoFocus) {
+      ref.current?.focus()
+      ref.current?.select()
+    }
+  }, [autoFocus])
+
+  const commit = () => {
+    const title = value.trim()
+    if (cancelled.current || !title) {
+      cancelled.current = false
+      setValue(sheet.title)
+    } else if (title !== sheet.title) {
+      rename.mutate(title)
+    }
+  }
+
+  return (
+    <div>
+      <input
+        ref={ref}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') cancelled.current = true
+          if (e.key === 'Enter' || e.key === 'Escape') e.currentTarget.blur()
+        }}
+        aria-label="Título da planilha"
+        className="w-full rounded-md bg-transparent px-1 text-xl font-semibold text-slate-900 outline-none hover:bg-slate-200/60 focus:bg-white focus:ring-2 focus:ring-emerald-600/30 md:text-2xl"
+      />
+      <ErrorText error={rename.error} />
     </div>
   )
 }
@@ -211,7 +287,7 @@ const metaOf = (s: Sheet): SheetMeta => ({
   title: s.title,
   crop_id: s.crop_id,
   variety_id: s.variety_id,
-  season_id: s.season_id,
+  pruning_date: s.pruning_date,
   client_ids: s.client_ids,
 })
 
@@ -252,7 +328,13 @@ function EditMetaDialog({ onClose, sheet }: { onClose: () => void; sheet: Sheet 
 function DuplicateDialog({ onClose, sheet }: { onClose: () => void; sheet: Sheet }) {
   const navigate = useNavigate()
   const qc = useQueryClient()
-  const [meta, setMeta] = useState<SheetMeta>(() => ({ ...metaOf(sheet), title: `${sheet.title} (cópia)`, client_ids: [] }))
+  // A cópia costuma ser para outro cliente: sem clientes e sem data da poda.
+  const [meta, setMeta] = useState<SheetMeta>(() => ({
+    ...metaOf(sheet),
+    title: `${sheet.title} (cópia)`,
+    client_ids: [],
+    pruning_date: null,
+  }))
   const [error, setError] = useState<unknown>(null)
   const [busy, setBusy] = useState(false)
 

@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
-import type { Client, Crop, Season, Sheet, SheetContent, SheetMeta, SheetSummary, Variety } from './types'
+import type { Client, Crop, Sheet, SheetContent, SheetMeta, SheetSummary, Variety } from './types'
 import { normalizeContent } from '@/editor/model'
-import { translateDbError } from './errors'
+import { findTemplate } from '@/templates'
+import { AppError, translateDbError } from './errors'
 
 interface Result<T> {
   data: T | null
@@ -17,7 +18,7 @@ async function unwrap<T>(query: PromiseLike<Result<T>>): Promise<T> {
 
 // Cadastros ------------------------------------------------------------------
 
-type RegistryTable = 'clients' | 'crops' | 'varieties' | 'seasons'
+type RegistryTable = 'clients' | 'crops' | 'varieties'
 
 function useRegistry<T>(table: RegistryTable) {
   return useQuery({
@@ -29,7 +30,6 @@ function useRegistry<T>(table: RegistryTable) {
 export const useClients = () => useRegistry<Client>('clients')
 export const useCrops = () => useRegistry<Crop>('crops')
 export const useVarieties = () => useRegistry<Variety>('varieties')
-export const useSeasons = () => useRegistry<Season>('seasons')
 
 export function useSaveRow<T extends { id: string }>(table: RegistryTable) {
   const qc = useQueryClient()
@@ -59,7 +59,8 @@ export function useDeleteRow(table: RegistryTable) {
 
 // Planilhas ------------------------------------------------------------------
 
-const SUMMARY_COLUMNS = 'id,title,crop_id,variety_id,season_id,created_at,updated_at,sheet_clients(client_id)'
+const SUMMARY_COLUMNS =
+  'id,title,crop_id,variety_id,pruning_date,created_at,updated_at,sheet_clients(client_id)'
 
 interface SheetRow extends Omit<SheetSummary, 'client_ids'> {
   sheet_clients: { client_id: string }[]
@@ -121,14 +122,54 @@ export async function createSheet(meta: SheetMeta, content?: SheetContent): Prom
   return row.id
 }
 
+/** De onde vem o conteúdo de uma planilha nova. */
+export type NewSheetSource = { kind: 'template'; templateId: string } | { kind: 'sheet'; sheetId: string }
+
+const blankMeta = (title: string): SheetMeta => ({
+  title,
+  crop_id: null,
+  variety_id: null,
+  pruning_date: null,
+  client_ids: [],
+})
+
+async function buildNewSheet(source: NewSheetSource): Promise<{ meta: SheetMeta; content?: SheetContent }> {
+  switch (source.kind) {
+    case 'template': {
+      const template = findTemplate(source.templateId)
+      if (!template) throw new AppError('Modelo não encontrado.')
+      return { meta: blankMeta(template.name), content: template.build() }
+    }
+    case 'sheet': {
+      // Cópia independente: mantém cultura e variedade, mas sem clientes.
+      const base = await fetchSheet(source.sheetId)
+      return {
+        meta: { ...blankMeta(`${base.title} (cópia)`), crop_id: base.crop_id, variety_id: base.variety_id },
+        content: base.content,
+      }
+    }
+  }
+}
+
 export function useCreateSheet() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ meta, copyFromId }: { meta: SheetMeta; copyFromId?: string }) => {
-      const content = copyFromId ? (await fetchSheet(copyFromId)).content : undefined
+    mutationFn: async (source: NewSheetSource) => {
+      const { meta, content } = await buildNewSheet(source)
       return createSheet(meta, content)
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['sheets'] }),
+  })
+}
+
+export function useRenameSheet(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (title: string) => unwrap(supabase.from('sheets').update({ title }).eq('id', id)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['sheets'] })
+      qc.invalidateQueries({ queryKey: ['sheet', id] })
+    },
   })
 }
 
