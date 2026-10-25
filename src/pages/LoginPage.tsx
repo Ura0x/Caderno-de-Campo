@@ -3,10 +3,16 @@ import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { ErrorText, PageLoader } from '@/components/ui'
 import { signInWithGoogle, useAuth } from '@/lib/auth'
+import { AppError } from '@/lib/errors'
 
 export function LoginPage() {
   const { session, loading } = useAuth()
-  const [error, setError] = useState<unknown>(null)
+  // Erro devolvido pelo Supabase no retorno do Google (ex.: e-mail fora da lista de acesso).
+  const [error, setError] = useState<unknown>(() => {
+    const params = new URLSearchParams(window.location.search || window.location.hash.slice(1))
+    const description = params.get('error_description')
+    return description ? new AppError(description.replace(/\+/g, ' ')) : null
+  })
 
   if (loading) return <PageLoader />
   if (session) return <Navigate to="/" replace />

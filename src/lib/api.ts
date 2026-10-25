@@ -16,6 +16,18 @@ async function unwrap<T>(query: PromiseLike<Result<T>>): Promise<T> {
   return data as T
 }
 
+// Acesso ---------------------------------------------------------------------
+
+/** O e-mail do usuário logado está na lista de acesso (tabela allowed_emails)? */
+export function useIsAllowed(userId: string | undefined) {
+  return useQuery({
+    queryKey: ['is-allowed', userId],
+    queryFn: () => unwrap<boolean>(supabase.rpc('is_allowed')),
+    enabled: Boolean(userId),
+    staleTime: Infinity,
+  })
+}
+
 // Cadastros ------------------------------------------------------------------
 
 type RegistryTable = 'clients' | 'crops' | 'varieties'

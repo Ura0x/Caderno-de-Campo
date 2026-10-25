@@ -37,6 +37,11 @@ export function translateDbError(error: DbError): AppError {
       return new AppError('Você não tem permissão para fazer isso. Saia e entre de novo na sua conta.')
     case 'PGRST116':
       return new AppError('Registro não encontrado. Ele pode ter sido excluído.')
+    // Função ou coluna que o app espera não existe: falta rodar uma migração no Supabase.
+    case 'PGRST202':
+    case '42703':
+    case '42883':
+      return new AppError('O banco de dados precisa ser atualizado. Avise o administrador.')
     case 'PGRST301':
     case 'PGRST303':
       return new AppError('Sua sessão expirou. Saia e entre de novo na sua conta.')

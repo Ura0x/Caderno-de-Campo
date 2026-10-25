@@ -16,6 +16,9 @@ npm run dev
 
 1. Crie um projeto em <https://supabase.com>.
 2. **SQL Editor** → cole e execute, **em ordem**, cada arquivo de `supabase/migrations/` (`0001_init.sql`, `0002_pruning_date.sql`, …).
+   - Libere os e-mails que podem usar o app (grupo fechado):
+     `insert into public.allowed_emails (email, note) values ('alguem@gmail.com', 'Nome');`
+   - **Authentication → Hooks → Before User Created** → tipo *Postgres* → função `public.hook_before_user_created`. Com isso, contas fora da lista nem chegam a ser criadas.
 3. **Project Settings → API**: copie a *Project URL* e a *publishable key* para o `.env`.
 4. **Login com Google**
    1. No [Google Cloud Console](https://console.cloud.google.com/apis/credentials), crie um *OAuth client ID* do tipo *Web application*.
