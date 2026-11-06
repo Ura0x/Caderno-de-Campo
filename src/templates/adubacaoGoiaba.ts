@@ -7,11 +7,14 @@ import type { SheetTemplate } from './index'
  * com uma coluna por produto, seguida da legenda dos produtos.
  */
 
-/** Conteúdo em 14 e rótulos (cabeçalho, fase, total) em 12: os nomes cabem inteiros nas colunas estreitas. */
+/**
+ * Conteúdo em 14 e rótulos (cabeçalho, fase, total) em 12: os nomes cabem inteiros nas colunas estreitas.
+ * Cabeçalho em verde forte (o verde do app) para destacar a planilha; total num verde mais escuro.
+ */
 const CONTENT_FONT = 14
 const LABEL_FONT = 12
-const HEADER: CellStyle = { bold: true, bg: '#1f2937', color: '#ffffff', align: 'center', vAlign: 'middle', fontSize: LABEL_FONT }
-const TOTAL: CellStyle = { bold: true, bg: '#374151', color: '#ffffff', align: 'center', vAlign: 'middle', fontSize: LABEL_FONT }
+const HEADER: CellStyle = { bold: true, bg: '#047857', color: '#ffffff', align: 'center', vAlign: 'middle', fontSize: LABEL_FONT }
+const TOTAL: CellStyle = { bold: true, bg: '#064e3b', color: '#ffffff', align: 'center', vAlign: 'middle', fontSize: LABEL_FONT }
 
 interface Phase {
   name: string
