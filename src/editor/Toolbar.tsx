@@ -20,7 +20,7 @@ import {
 import { useMemo, useState, type ReactNode } from 'react'
 import { cx } from '@/components/ui'
 import type { Align, CellStyle, VAlign } from '@/lib/types'
-import { DEFAULT_FONT_SIZE, FONT_SIZES, MAX_WIDTH, MIN_WIDTH, columnWidth, effectiveStyle, ops, resolve, stepFontSize, type Scope } from './model'
+import { FONT_SIZES, defaultFontSize, MAX_WIDTH, MIN_WIDTH, columnWidth, effectiveStyle, ops, resolve, stepFontSize, type Scope } from './model'
 import { useEditor } from './store'
 
 const BG_COLORS = ['#ffffff', '#f1f5f9', '#e2e8f0', '#fef9c3', '#fde68a', '#fed7aa', '#fecaca', '#fbcfe8', '#e9d5ff', '#bfdbfe', '#a5f3fc', '#bbf7d0', '#d9f99d', '#047857', '#1e3a8a', '#0f172a']
@@ -30,6 +30,7 @@ const SCOPES: { value: Scope; label: string }[] = [
   { value: 'cell', label: 'Célula' },
   { value: 'row', label: 'Linha' },
   { value: 'column', label: 'Coluna' },
+  { value: 'table', label: 'Tabela' },
 ]
 
 /** Barra de edição: no PC fica fixa no topo, no celular fica presa embaixo da tela. */
@@ -47,8 +48,15 @@ export function Toolbar() {
   const off = !target
 
   const style = (patch: CellStyle) => selection && apply((d) => ops.applyStyle(d, selection, scope, patch))
-  const fontSize = current.fontSize ?? DEFAULT_FONT_SIZE
-  const setFontSize = (size: number) => style({ fontSize: size === DEFAULT_FONT_SIZE ? undefined : size })
+  // Tabelas compactas têm letra padrão menor; o padrão fica sem valor salvo.
+  const baseSize = defaultFontSize(target?.table.dense)
+  const fontSize = current.fontSize ?? baseSize
+  const setFontSize = (size: number) => style({ fontSize: size === baseSize ? undefined : size })
+  // Escopo "Tabela": cada célula sobe/desce um passo a partir do próprio tamanho.
+  const stepFont = (dir: 1 | -1) =>
+    scope === 'table'
+      ? selection && apply((d) => ops.stepTableFont(d, selection.tableId, dir))
+      : setFontSize(stepFontSize(fontSize, dir))
   const run = (fn: (sel: NonNullable<typeof selection>) => void) => () => selection && target && fn(selection)
 
   return (
@@ -110,11 +118,11 @@ export function Toolbar() {
         </div>
 
         <div className="flex shrink-0 items-center rounded-lg border border-slate-200" title="Tamanho da letra">
-          <Tool label="Diminuir letra" disabled={off || fontSize <= FONT_SIZES[0]} onClick={() => setFontSize(stepFontSize(fontSize, -1))}>
+          <Tool label="Diminuir letra" disabled={off || fontSize <= FONT_SIZES[0]} onClick={() => stepFont(-1)}>
             <Minus size={16} />
           </Tool>
           <span className={cx('w-6 text-center text-sm font-medium tabular-nums', off ? 'text-slate-300' : 'text-slate-700')}>{fontSize}</span>
-          <Tool label="Aumentar letra" disabled={off || fontSize >= FONT_SIZES.at(-1)!} onClick={() => setFontSize(stepFontSize(fontSize, 1))}>
+          <Tool label="Aumentar letra" disabled={off || fontSize >= FONT_SIZES.at(-1)!} onClick={() => stepFont(1)}>
             <Plus size={16} />
           </Tool>
         </div>

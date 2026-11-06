@@ -379,7 +379,13 @@ function PdfDialog({
   sheet: Sheet
   details: { label: string; value: string }[]
 }) {
-  const [orientation, setOrientation] = useState<Orientation>('portrait')
+  // Sem escolha do usuário: paisagem se houver tabela compacta (grades largas), senão retrato.
+  const hasDense = useEditor((s) => s.content.sections.some((sec) => sec.type !== 'text' && sec.dense))
+  const [chosen, setOrientation] = useState<Orientation | null>(null)
+  const orientation = chosen ?? (hasDense ? 'landscape' : 'portrait')
+  // Encaixar numa página: ligado por padrão nas planilhas com tabela compacta.
+  const [fitChoice, setFit] = useState<boolean | null>(null)
+  const fitOnePage = fitChoice ?? hasDense
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<unknown>(null)
 
@@ -389,7 +395,9 @@ function PdfDialog({
     try {
       // Carregado sob demanda: a biblioteca de PDF é pesada.
       const { exportSheetPdf } = await import('@/editor/pdf')
-      await exportSheetPdf({ title: sheet.title, details }, useEditor.getState().content, orientation)
+      await exportSheetPdf({ title: sheet.title, details }, useEditor.getState().content, orientation, {
+        fitOnePage,
+      })
       onClose()
     } catch (e) {
       setError(e)
@@ -431,6 +439,20 @@ function PdfDialog({
           </div>
         </Field>
         <p className="text-xs text-slate-500">Tabelas com muitas colunas ficam melhores em paisagem.</p>
+        <label className="flex cursor-pointer items-start gap-2.5 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            checked={fitOnePage}
+            onChange={(e) => setFit(e.target.checked)}
+            className="mt-0.5 h-4 w-4 accent-emerald-600"
+          />
+          <span>
+            Caber em uma página
+            <span className="block text-xs text-slate-500">
+              Se não couber, as tabelas são reduzidas na mesma proporção só o necessário.
+            </span>
+          </span>
+        </label>
         <ErrorText error={error} />
       </div>
     </Dialog>

@@ -7,8 +7,11 @@ import type { SheetTemplate } from './index'
  * com uma coluna por produto, seguida da legenda dos produtos.
  */
 
-const HEADER: CellStyle = { bold: true, bg: '#1f2937', color: '#ffffff', align: 'center', vAlign: 'middle' }
-const TOTAL: CellStyle = { bold: true, bg: '#374151', color: '#ffffff', align: 'center', vAlign: 'middle' }
+/** Conteúdo em 14 e rótulos (cabeçalho, fase, total) em 12: os nomes cabem inteiros nas colunas estreitas. */
+const CONTENT_FONT = 14
+const LABEL_FONT = 12
+const HEADER: CellStyle = { bold: true, bg: '#1f2937', color: '#ffffff', align: 'center', vAlign: 'middle', fontSize: LABEL_FONT }
+const TOTAL: CellStyle = { bold: true, bg: '#374151', color: '#ffffff', align: 'center', vAlign: 'middle', fontSize: LABEL_FONT }
 
 interface Phase {
   name: string
@@ -39,13 +42,14 @@ const styled = (text: string, style: CellStyle): CellSpec => ({ text, style })
  */
 function grid(title: string, caption: string, products: string[], doses: Doses, withTotal = false) {
   const columns: ColumnSpec[] = [
-    { width: 0.6 }, // Fase (texto deitado)
-    { width: 0.5 }, // Dia
-    { width: 0.8 }, // Semana
-    // Nomes compostos ("S. POTÁSSIO") um pouco mais largos, para o cabeçalho não quebrar.
+    // Pesos equilibrados pela maior palavra de cada coluna ("TOTAL", "SEMANA", "PERCURSO"…),
+    // para nenhuma coluna exigir a tabela mais larga que as outras.
+    { width: 0.75, style: { fontSize: CONTENT_FONT } }, // Fase (texto deitado; "TOTAL" no fim)
+    { width: 0.55, style: { fontSize: CONTENT_FONT } }, // Dia
+    { width: 0.9, style: { fontSize: CONTENT_FONT } }, // Semana
     ...products.map((p): ColumnSpec => ({
-      style: { align: 'center', vAlign: 'middle' },
-      ...(p.length > 10 && { width: 1.15 }),
+      style: { align: 'center', vAlign: 'middle', fontSize: CONTENT_FONT },
+      ...(p.length > 10 ? { width: 1.15 } : p.length >= 7 && { width: 1.1 }),
     })),
   ]
   const header: BlockSpec = ['FASE', 'DIA', 'SEMANA', ...products].map((t) => [styled(t, HEADER)])
@@ -55,7 +59,7 @@ function grid(title: string, caption: string, products: string[], doses: Doses, 
     const rowStyle: CellStyle = { bg: p.row, align: 'center', vAlign: 'middle' }
     const keyStyle: CellStyle = { ...rowStyle, bold: true }
     return [
-      [styled(p.name, { bold: true, bg: p.label, color: '#ffffff', align: 'center', vAlign: 'middle', vertical: true })],
+      [styled(p.name, { bold: true, bg: p.label, color: '#ffffff', align: 'center', vAlign: 'middle', vertical: true, fontSize: LABEL_FONT })],
       weeks.map((w) => styled(String(w * 7), keyStyle)),
       weeks.map((w) => styled(`Sem. ${w}`, keyStyle)),
       ...products.map((product) => weeks.map((w) => styled(doses[product]?.[w] ?? '', rowStyle))),
@@ -74,7 +78,7 @@ function grid(title: string, caption: string, products: string[], doses: Doses, 
 const legend = (rows: [string, string][]) =>
   table(
     'Legenda dos produtos',
-    [{ style: { bold: true, vAlign: 'middle' }, width: 1.2 }, { width: 6 }],
+    [{ style: { bold: true, vAlign: 'middle', fontSize: CONTENT_FONT }, width: 1.2 }, { width: 6, style: { fontSize: CONTENT_FONT } }],
     [
       [[styled('PRODUTO', HEADER)], [styled('DESCRIÇÃO', HEADER)]],
       [rows.map(([product]) => product), rows.map(([, text]) => text)],
