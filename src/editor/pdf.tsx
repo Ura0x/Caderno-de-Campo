@@ -12,6 +12,7 @@ import {
   isText,
   isZebraRow,
 } from './model'
+import { cellDisplay } from './formula'
 import { TONES, parseNote } from './note'
 
 // Quebra só entre palavras, sem hifenizar (ex.: "benziladen-ina").
@@ -30,6 +31,11 @@ const BORDER = '#cbd5e1'
 const BASE_FONT = 9
 // Mantém a proporção do editor: 14px na tela = 9pt no PDF.
 const pdfFontSize = (px?: number) => ((px ?? DEFAULT_FONT_SIZE) * BASE_FONT) / DEFAULT_FONT_SIZE
+/** Tabela compacta: letra a ~2/3 do normal (9pt → 6pt) e células com pouco espaço interno. */
+const DENSE_SCALE = 2 / 3
+const DENSE_PAD = { v: 0.8, h: 2 }
+/** Altura de uma linha de texto na tabela compacta (letra + espaço + borda). */
+const denseRowHeight = (font: number) => font * 1.15 + DENSE_PAD.v * 2 + 1
 
 const s = StyleSheet.create({
   page: {
@@ -71,6 +77,13 @@ const s = StyleSheet.create({
   group: { flexDirection: 'column', borderRightWidth: 1, borderColor: BORDER },
   row: { flexDirection: 'row', flexGrow: 1, borderBottomWidth: 1, borderColor: BORDER },
   cell: { minHeight: 18, paddingVertical: 3.5, paddingHorizontal: 5, borderColor: BORDER },
+  denseCell: { minHeight: 0, paddingVertical: DENSE_PAD.v, paddingHorizontal: DENSE_PAD.h },
+  // Com tabelas compactas a página tem menos margem e as seções ficam mais juntas, para caber numa folha.
+  densePage: { paddingTop: 22, paddingBottom: 34 },
+  denseSection: { marginBottom: 8 },
+  denseTitleRow: { marginBottom: 3 },
+  densePill: { paddingVertical: 2, paddingHorizontal: 6 },
+  densePillText: { fontSize: 8 },
   note: { borderWidth: 1, borderLeftWidth: 3, borderRadius: 4, paddingVertical: 10, paddingHorizontal: 12 },
   noteTitle: { fontSize: 11, fontFamily: 'Helvetica-Bold', marginBottom: 7 },
   noteLine: { flexDirection: 'row', marginBottom: 4 },
@@ -91,12 +104,12 @@ const s = StyleSheet.create({
   },
 })
 
-function SectionTitle({ title }: { title: string }) {
+function SectionTitle({ title, dense }: { title: string; dense?: boolean }) {
   if (!title) return null
   return (
-    <View style={s.sectionTitleRow} wrap={false}>
-      <View style={s.sectionPill}>
-        <Text style={s.sectionPillText}>{title}</Text>
+    <View style={[s.sectionTitleRow, dense ? s.denseTitleRow : {}]} wrap={false}>
+      <View style={[s.sectionPill, dense ? s.densePill : {}]}>
+        <Text style={[s.sectionPillText, dense ? s.densePillText : {}]}>{title}</Text>
       </View>
       <View style={s.sectionRule} />
     </View>
@@ -140,12 +153,38 @@ function PdfText({ section }: { section: TextSection }) {
   )
 }
 
+/**
+ * Texto deitado (de baixo para cima). O react-pdf gira só o desenho, não o espaço ocupado:
+ * por isso o texto fica num quadro com a altura estimada do bloco, girado em torno do centro da célula.
+ */
+function VerticalText({ length, font, children }: { length: number; font: number; children: React.ReactNode }) {
+  const thickness = font * 2.6
+  return (
+    <View
+      style={{
+        position: 'absolute',
+        left: '50%',
+        top: '50%',
+        width: length,
+        height: thickness,
+        marginLeft: -length / 2,
+        marginTop: -thickness / 2,
+        justifyContent: 'center',
+        transform: 'rotate(-90deg)',
+      }}
+    >
+      {children}
+    </View>
+  )
+}
+
 function PdfTable({ table }: { table: SheetTable }) {
+  const dense = !!table.dense
   const cellCount = table.blocks.reduce((n, b) => n + Object.values(b.cells).reduce((m, c) => m + c.length, 0), 0)
   return (
     // Tabelas pequenas não são quebradas entre páginas.
-    <View style={s.section} wrap={cellCount > 60}>
-      <SectionTitle title={table.title} />
+    <View style={[s.section, dense ? s.denseSection : {}]} wrap={cellCount > 60}>
+      <SectionTitle title={table.title} dense={dense} />
       {blockFrames(table.blocks).map((frame, fi) => (
         <View key={frame[0].block.id} style={fi > 0 ? { marginTop: 10 } : {}}>
           {frame[0].block.caption && (
@@ -155,17 +194,20 @@ function PdfTable({ table }: { table: SheetTable }) {
             </View>
           )}
           <View style={s.grid}>
-            {frame.map(({ block }, bi) => {
+            {frame.map(({ block, index: blockIndex }, bi) => {
               const groups = columnGroups(block, table.columns)
+              const blockRows = Math.max(...groups.map((g) => g.rows))
               return (
                 <View key={block.id} style={[s.block, bi > 0 ? s.blockSeparator : {}]} wrap={false}>
-                  {groups.map((group, gi) => (
+                  {groups.map((group, gi) => {
+                    const weight = group.cols.reduce((n, { col }) => n + columnWidth(col), 0)
+                    return (
                     // Mesma lógica do editor: colunas do grupo dividem as linhas.
                     <View
                       key={group.cols[0].col.id}
                       style={[
                         s.group,
-                        { flex: group.cols.reduce((n, { col }) => n + columnWidth(col), 0) },
+                        { flex: weight },
                         gi === groups.length - 1 ? { borderRightWidth: 0 } : {},
                       ]}
                     >
@@ -175,12 +217,31 @@ function PdfTable({ table }: { table: SheetTable }) {
                             const cell = cellsOf(block, col.id)[r]
                             if (!cell) return null
                             const st = effectiveStyle(col, cell)
+                            const font = pdfFontSize(st.fontSize) * (dense ? DENSE_SCALE : 1)
+                            const text = (
+                              <Text
+                                style={{
+                                  color: st.color,
+                                  textAlign: st.align ?? 'left',
+                                  fontSize: font,
+                                  fontFamily: `Helvetica${st.bold && st.italic ? '-BoldOblique' : st.bold ? '-Bold' : st.italic ? '-Oblique' : ''}`,
+                                }}
+                              >
+                                {cellDisplay(table, blockIndex, col.id, r)}
+                              </Text>
+                            )
+                            // Comprimento disponível para o texto deitado: a altura do bloco, descontada uma folga.
+                            const verticalLength =
+                              (blockRows / group.rows) * (dense ? denseRowHeight(font) : 18) - 4
                             return (
                               <View
                                 key={cell.id}
                                 style={[
                                   s.cell,
-                                  { flex: columnWidth(col), justifyContent: V_ALIGN_FLEX[st.vAlign ?? 'top'] },
+                                  dense ? s.denseCell : {},
+                                  // Pesos normalizados no grupo: somando menos de 1, a célula não ocuparia a largura toda.
+                                  { flex: columnWidth(col) / weight, justifyContent: V_ALIGN_FLEX[st.vAlign ?? 'top'] },
+                                  st.vertical ? { position: 'relative', minHeight: font * 3 } : {},
                                   ci < group.cols.length - 1 ? { borderRightWidth: 1 } : {},
                                   st.bg
                                     ? { backgroundColor: st.bg }
@@ -189,23 +250,21 @@ function PdfTable({ table }: { table: SheetTable }) {
                                       : {},
                                 ]}
                               >
-                                <Text
-                                  style={{
-                                    color: st.color,
-                                    textAlign: st.align ?? 'left',
-                                    fontSize: pdfFontSize(st.fontSize),
-                                    fontFamily: `Helvetica${st.bold && st.italic ? '-BoldOblique' : st.bold ? '-Bold' : st.italic ? '-Oblique' : ''}`,
-                                  }}
-                                >
-                                  {cell.raw}
-                                </Text>
+                                {st.vertical ? (
+                                  <VerticalText length={verticalLength} font={font}>
+                                    {text}
+                                  </VerticalText>
+                                ) : (
+                                  text
+                                )}
                               </View>
                             )
                           })}
                         </View>
                       ))}
                     </View>
-                  ))}
+                    )
+                  })}
                 </View>
               )
             })}
@@ -226,9 +285,10 @@ function SheetPdf({
   orientation: Orientation
 }) {
   const generated = new Date().toLocaleDateString('pt-BR')
+  const hasDense = content.sections.some((sec) => !isText(sec) && sec.dense)
   return (
     <Document title={header.title}>
-      <Page size="A4" orientation={orientation} style={s.page}>
+      <Page size="A4" orientation={orientation} style={[s.page, hasDense ? s.densePage : {}]}>
         <View style={s.topBar} fixed />
         <Text style={s.title}>{header.title}</Text>
         {header.details.length > 0 && (

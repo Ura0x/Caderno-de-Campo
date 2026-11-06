@@ -64,6 +64,8 @@ export interface CellStyle {
   vAlign?: VAlign
   /** Tamanho da letra em px; sem valor = tamanho padrão (DEFAULT_FONT_SIZE). */
   fontSize?: number
+  /** Texto deitado (de baixo para cima), para rótulos em colunas estreitas (ex.: fase). */
+  vertical?: boolean
 }
 
 export interface Cell {
@@ -101,6 +103,8 @@ export interface SheetTable {
   title: string
   columns: Column[]
   blocks: Block[]
+  /** Tabela compacta: letra menor e menos espaço nas células, para grades largas caberem na tela e numa folha. */
+  dense?: boolean
 }
 
 /** Cor de destaque de um bloco de texto. */

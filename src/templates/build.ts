@@ -27,11 +27,17 @@ const cell = (c: CellSpec): Cell =>
  * Monta uma tabela; ids novos a cada chamada, para cada planilha criada ser independente.
  * `blocks` são as faixas de cima para baixo.
  */
-export function table(title: string, columns: ColumnSpec[], blocks: (BlockSpec | BlockOptions)[]): SheetTable {
+export function table(
+  title: string,
+  columns: ColumnSpec[],
+  blocks: (BlockSpec | BlockOptions)[],
+  { dense }: { dense?: boolean } = {},
+): SheetTable {
   const cols: Column[] = columns.map((spec) => ({ id: nanoid(8), ...spec }))
   return {
     id: nanoid(8),
     title,
+    ...(dense && { dense }),
     columns: cols,
     blocks: blocks.map((b) => {
       const { cells: spec, spaced, caption } = Array.isArray(b) ? { cells: b } : b

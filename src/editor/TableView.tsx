@@ -16,10 +16,13 @@ import {
   ops,
   type Selection,
 } from './model'
+import { cellDisplay, isFormula } from './formula'
 import { useEditor } from './store'
 
 /** Largura mínima (px) de uma coluna de largura 1; abaixo disso a tabela rola na horizontal. */
 const COLUMN_MIN_WIDTH = 120
+/** Na tabela compacta as colunas podem ficar mais estreitas, para grades largas caberem na tela. */
+const DENSE_COLUMN_MIN_WIDTH = 56
 
 export function TableView({ table }: { table: SheetTable }) {
   const apply = useEditor((s) => s.apply)
@@ -64,7 +67,9 @@ export function TableView({ table }: { table: SheetTable }) {
         <div
           className="flex w-full flex-col gap-4"
           style={{
-            minWidth: table.columns.reduce((n, c) => n + columnWidth(c), 0) * COLUMN_MIN_WIDTH,
+            minWidth:
+              table.columns.reduce((n, c) => n + columnWidth(c), 0) *
+              (table.dense ? DENSE_COLUMN_MIN_WIDTH : COLUMN_MIN_WIDTH),
           }}
         >
           {frames.map((frame, fi) => (
@@ -87,6 +92,7 @@ export function TableView({ table }: { table: SheetTable }) {
                     key={block.id}
                     table={table}
                     block={block}
+                    blockIndex={index}
                     offsets={blockOffsets[index]}
                     separated={i > 0}
                   />
@@ -214,11 +220,13 @@ function ColumnHeader({ col, name }: { col: Column; name: string }) {
 function BlockView({
   table,
   block,
+  blockIndex,
   offsets,
   separated,
 }: {
   table: SheetTable
   block: Block
+  blockIndex: number
   offsets: Record<string, number>
   separated: boolean
 }) {
@@ -227,8 +235,9 @@ function BlockView({
   return (
     <div className={cx('flex items-stretch', separated && 'border-t-2 border-slate-400')}>
       {groups.map((group, gi) => {
-        const template = group.cols.map(({ col }) => `minmax(0, ${columnWidth(col)}fr)`).join(' ')
         const weight = group.cols.reduce((n, { col }) => n + columnWidth(col), 0)
+        // Frações normalizadas (somam 1): pesos que somam menos de 1 não ocupariam a largura toda.
+        const template = group.cols.map(({ col }) => `minmax(0, ${columnWidth(col) / weight}fr)`).join(' ')
         return (
           <div
             key={group.cols[0].col.id}
@@ -260,6 +269,8 @@ function BlockView({
                     name={columnName(index)}
                     rowGroup={group.cols.length > 1 ? group.cols.map((c) => c.col.id) : [col.id]}
                     zebra={isZebraRow(group.rows, i)}
+                    display={isFormula(cell.raw) ? cellDisplay(table, blockIndex, col.id, i) : undefined}
+                    dense={!!table.dense}
                     borderBottom={i < group.rows - 1}
                     borderRight={ci < group.cols.length - 1}
                   />
@@ -281,6 +292,8 @@ function CellView({
   name,
   rowGroup,
   zebra,
+  display,
+  dense,
   borderBottom,
   borderRight,
 }: {
@@ -293,6 +306,10 @@ function CellView({
   rowGroup: string[]
   /** Linha alternada de uma lista (fundo sutil, se a célula não tiver cor própria). */
   zebra: boolean
+  /** Resultado da fórmula (só em células com fórmula); a fórmula aparece ao editar a célula. */
+  display?: string
+  /** Tabela compacta: sem o número da linha, letra menor e menos espaço. */
+  dense: boolean
   borderBottom: boolean
   borderRight: boolean
 }) {
@@ -309,12 +326,16 @@ function CellView({
     return ''
   })
   const ref = useRef<HTMLTextAreaElement>(null)
+  const [editing, setEditing] = useState(false)
   const style = effectiveStyle(col, cell)
+  const formula = display !== undefined
 
   return (
     <div
       className={cx(
-        'relative flex min-h-9 cursor-text border-slate-200',
+        'relative flex cursor-text border-slate-200',
+        // Deitado: altura mínima para o rótulo caber quando o bloco tem poucas linhas.
+        style.vertical ? 'min-h-24' : dense ? 'min-h-6' : 'min-h-9',
         borderBottom && 'border-b',
         borderRight && 'border-r',
         mark === 'selected' && 'z-[1] outline-2 -outline-offset-2 outline-emerald-600',
@@ -322,9 +343,9 @@ function CellView({
       )}
       style={{
         backgroundColor: style.bg ?? (zebra ? ZEBRA_BG : undefined),
-        alignItems: V_ALIGN_FLEX[style.vAlign ?? 'top'],
+        alignItems: style.vertical ? 'stretch' : V_ALIGN_FLEX[style.vAlign ?? 'top'],
       }}
-      title={`${name}${number}`}
+      title={formula ? `${name}${number} · fórmula ${cell.raw.trim()}` : `${name}${number}`}
       onMouseDown={(e) => {
         if (e.target !== ref.current) {
           e.preventDefault()
@@ -332,17 +353,25 @@ function CellView({
         }
       }}
     >
-      <span
-        className="pointer-events-none absolute top-0.5 right-1 text-[10px] leading-none font-medium opacity-40 select-none"
-        style={{ color: style.color }}
-      >
-        {number}
-      </span>
+      {!dense && (
+        <span
+          className="pointer-events-none absolute top-0.5 right-1 text-[10px] leading-none font-medium opacity-40 select-none"
+          style={{ color: style.color }}
+        >
+          {number}
+        </span>
+      )}
       <AutoTextarea
         ref={ref}
-        value={cell.raw}
+        value={formula && !editing ? display : cell.raw}
         onChange={(raw) => apply((d) => ops.setCell(d, at, raw), `cell:${cell.id}`)}
-        onFocus={() => select(at)}
+        onFocus={() => {
+          setEditing(true)
+          select(at)
+        }}
+        onBlur={() => setEditing(false)}
+        dense={dense}
+        vertical={!!style.vertical}
         style={{
           color: style.color,
           fontWeight: style.bold ? 700 : undefined,
@@ -350,7 +379,9 @@ function CellView({
           fontStyle: style.italic ? 'italic' : undefined,
           textAlign: style.align,
           // Compensa o espaço do número da linha (pr-6) para o centro ficar no meio.
-          paddingLeft: style.align === 'center' ? '1.5rem' : undefined,
+          paddingLeft: style.align === 'center' && !dense && !style.vertical ? '1.5rem' : undefined,
+          // Deitado: lido de baixo para cima; o alinhamento horizontal vira posição ao longo da altura.
+          ...(style.vertical && { writingMode: 'vertical-rl', transform: 'rotate(180deg)' }),
         }}
       />
     </div>
@@ -362,22 +393,34 @@ function AutoTextarea({
   value,
   onChange,
   onFocus,
+  onBlur,
+  dense,
+  vertical,
   style,
 }: {
   ref: React.RefObject<HTMLTextAreaElement | null>
   value: string
   onChange: (v: string) => void
   onFocus: () => void
+  onBlur: () => void
+  dense: boolean
+  /** Texto deitado: ocupa a altura da célula em vez de crescer conforme o texto. */
+  vertical: boolean
   style: React.CSSProperties
 }) {
   const fit = () => {
     const el = ref.current
     if (!el) return
+    // Deitado: a caixa cobre a célula inteira (absolute), sem ditar a altura do bloco.
+    if (vertical) {
+      el.style.height = ''
+      return
+    }
     el.style.height = 'auto'
     el.style.height = `${el.scrollHeight}px`
   }
 
-  useLayoutEffect(fit, [value, style.fontWeight, style.fontSize])
+  useLayoutEffect(fit, [value, style.fontWeight, style.fontSize, vertical, dense])
 
   // Reajusta a altura quando a largura muda (janela redimensionada, coluna nova).
   useEffect(() => {
@@ -401,8 +444,13 @@ function AutoTextarea({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       onFocus={onFocus}
+      onBlur={onBlur}
       style={style}
-      className="block w-full resize-none overflow-hidden bg-transparent py-1.5 pr-6 pl-2 text-base leading-snug text-slate-900 outline-none md:text-sm"
+      className={cx(
+        'block w-full resize-none overflow-hidden bg-transparent leading-snug text-slate-900 outline-none',
+        vertical ? 'absolute inset-0 h-full px-1 py-2' : dense ? 'px-1 py-1' : 'py-1.5 pr-6 pl-2',
+        dense ? 'text-xs' : 'text-base md:text-sm',
+      )}
     />
   )
 }

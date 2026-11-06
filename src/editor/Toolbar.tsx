@@ -13,6 +13,7 @@ import {
   Plus,
   PaintBucket,
   Redo2,
+  RotateCcwSquare,
   Type,
   Undo2,
 } from 'lucide-react'
@@ -141,6 +142,9 @@ export function Toolbar() {
             </Tool>
           )
         })}
+        <Tool label="Texto deitado" disabled={off} active={current.vertical} onClick={() => style({ vertical: current.vertical ? undefined : true })}>
+          <RotateCcwSquare size={18} />
+        </Tool>
         <Tool label="Cor de fundo" disabled={off} active={palette === 'bg'} onClick={() => setPalette(palette === 'bg' ? null : 'bg')}>
           <PaintBucket size={18} />
           <ColorBar color={current.bg} />
