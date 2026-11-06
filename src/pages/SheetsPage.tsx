@@ -1,9 +1,9 @@
-import { CalendarDays, FileSpreadsheet, Plus, Search, SlidersHorizontal, UserX, Users, X } from 'lucide-react'
+import { CalendarDays, FileSpreadsheet, Loader2, Plus, Search, SlidersHorizontal, Trash2, UserX, Users, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { NewSheetDialog } from '@/components/NewSheetDialog'
-import { Button, EmptyState, ErrorText, Field, Input, PageLoader, Select, cx } from '@/components/ui'
-import { useClients, useCrops, useSheets, useVarieties } from '@/lib/api'
+import { Button, Dialog, EmptyState, ErrorText, Field, Input, PageLoader, Select, cx } from '@/components/ui'
+import { useClients, useCrops, useDeleteSheet, useSheets, useVarieties } from '@/lib/api'
 import { formatDate, useLookups } from '@/lib/lookups'
 import type { SheetSummary } from '@/lib/types'
 
@@ -168,14 +168,16 @@ function SheetCard({ sheet }: { sheet: SheetSummary }) {
   const clientNames = sheet.client_ids.map((id) => names.clients.get(id)).filter(Boolean)
   const crop = sheet.crop_id && names.crops.get(sheet.crop_id)
   const variety = sheet.variety_id && names.varieties.get(sheet.variety_id)
+  const [confirming, setConfirming] = useState(false)
 
   return (
-    <li>
+    <li className="relative">
       <Link
         to={`/planilhas/${sheet.id}`}
         className="flex h-full flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-emerald-600/40 hover:shadow-md"
       >
-        <h2 className="line-clamp-2 font-semibold text-slate-900">{sheet.title}</h2>
+        {/* pr-10: espaço para o botão de excluir, que fica fora do link. */}
+        <h2 className="line-clamp-2 pr-10 font-semibold text-slate-900">{sheet.title}</h2>
         <div className="flex flex-wrap gap-1.5 text-xs font-medium">
           {crop && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-emerald-800">{crop}</span>}
           {variety && <span className="rounded-full bg-lime-50 px-2 py-0.5 text-lime-800">{variety}</span>}
@@ -196,6 +198,44 @@ function SheetCard({ sheet }: { sheet: SheetSummary }) {
           </span>
         </div>
       </Link>
+      <button
+        onClick={() => setConfirming(true)}
+        className="absolute top-2.5 right-2.5 rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
+        aria-label={`Excluir a planilha ${sheet.title}`}
+        title="Excluir planilha"
+      >
+        <Trash2 size={18} />
+      </button>
+      {confirming && <DeleteSheetDialog sheet={sheet} onClose={() => setConfirming(false)} />}
     </li>
+  )
+}
+
+function DeleteSheetDialog({ sheet, onClose }: { sheet: SheetSummary; onClose: () => void }) {
+  const deleteSheet = useDeleteSheet()
+  const remove = () => deleteSheet.mutate(sheet.id, { onSuccess: onClose })
+
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title="Excluir planilha"
+      footer={
+        <>
+          <Button onClick={onClose} disabled={deleteSheet.isPending}>
+            Cancelar
+          </Button>
+          <Button variant="danger" onClick={remove} disabled={deleteSheet.isPending}>
+            {deleteSheet.isPending ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />} Excluir
+          </Button>
+        </>
+      }
+    >
+      <p className="text-sm text-slate-700">
+        Tem certeza que deseja excluir a planilha <strong>“{sheet.title}”</strong>?
+      </p>
+      <p className="mt-2 text-sm font-medium text-red-600">Essa ação é irreversível.</p>
+      <ErrorText error={deleteSheet.error} />
+    </Dialog>
   )
 }

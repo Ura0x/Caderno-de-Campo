@@ -1,8 +1,9 @@
 import { Minus, Plus, Trash2 } from 'lucide-react'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { cx } from '@/components/ui'
 import type { Block, Cell, Column, SheetTable } from '@/lib/types'
 import {
+  DEFAULT_FONT_SIZE,
   V_ALIGN_FLEX,
   ZEBRA_BG,
   blockFrames,
@@ -11,9 +12,12 @@ import {
   columnGroups,
   columnName,
   columnWidth,
+  defaultFontSize,
   effectiveStyle,
   isZebraRow,
   ops,
+  tableMinWidth,
+  unbreakableWords,
   type Selection,
 } from './model'
 import { cellDisplay, isFormula } from './formula'
@@ -23,6 +27,30 @@ import { useEditor } from './store'
 const COLUMN_MIN_WIDTH = 120
 /** Na tabela compacta as colunas podem ficar mais estreitas, para grades largas caberem na tela. */
 const DENSE_COLUMN_MIN_WIDTH = 56
+
+let measureCtx: CanvasRenderingContext2D | null = null
+/** Largura (px) de um texto na fonte da página, medida num canvas. */
+function textWidth(text: string, sizePx: number, bold: boolean): number {
+  measureCtx ??= document.createElement('canvas').getContext('2d')
+  if (!measureCtx) return text.length * sizePx * 0.6
+  measureCtx.font = `${bold ? 700 : 400} ${sizePx}px ${getComputedStyle(document.body).fontFamily}`
+  return measureCtx.measureText(text).width
+}
+
+/**
+ * Menor largura (px) da célula sem quebrar uma palavra no meio: a maior palavra
+ * mais o espaço interno da célula (o mesmo das classes em CellView/AutoTextarea).
+ */
+function cellMinWidth(col: Column, cell: Cell, dense: boolean): number {
+  const st = effectiveStyle(col, cell)
+  if (st.vertical || !cell.raw.trim()) return 0
+  // Sem tamanho escolhido: text-xs (12px) na compacta; text-base no celular e text-sm (14px) a partir de md.
+  const size = st.fontSize ?? (dense ? defaultFontSize(true) : window.innerWidth >= 768 ? DEFAULT_FONT_SIZE : 16)
+  const padding = dense ? 8 : st.align === 'center' ? 48 : 32
+  const word = Math.max(...unbreakableWords(cell.raw).map((w) => textWidth(w, size, !!st.bold)))
+  // +4: folga para arredondamentos e a borda.
+  return Math.ceil(word) + padding + 4
+}
 
 export function TableView({ table }: { table: SheetTable }) {
   const apply = useEditor((s) => s.apply)
@@ -35,6 +63,16 @@ export function TableView({ table }: { table: SheetTable }) {
   }
 
   const frames = blockFrames(table.blocks)
+
+  // Largura mínima: a padrão por coluna ou a necessária para a maior palavra de cada coluna caber inteira.
+  const minWidth = useMemo(
+    () =>
+      Math.max(
+        table.columns.reduce((n, c) => n + columnWidth(c), 0) * (table.dense ? DENSE_COLUMN_MIN_WIDTH : COLUMN_MIN_WIDTH),
+        tableMinWidth(table, (col, cell) => cellMinWidth(col, cell, !!table.dense)),
+      ),
+    [table],
+  )
 
   // Numeração contínua das linhas de cada coluna ao longo dos blocos.
   const offsets = new Map<string, number>()
@@ -67,9 +105,7 @@ export function TableView({ table }: { table: SheetTable }) {
         <div
           className="flex w-full flex-col gap-4"
           style={{
-            minWidth:
-              table.columns.reduce((n, c) => n + columnWidth(c), 0) *
-              (table.dense ? DENSE_COLUMN_MIN_WIDTH : COLUMN_MIN_WIDTH),
+            minWidth,
           }}
         >
           {frames.map((frame, fi) => (
@@ -321,6 +357,7 @@ function CellView({
     if (!sel || sel.tableId !== at.tableId) return ''
     const sameBlock = sel.blockId === at.blockId
     if (sameBlock && sel.colId === at.colId && sel.cellIndex === at.cellIndex) return 'selected'
+    if (s.scope === 'table') return 'scope'
     if (s.scope === 'column' && sel.colId === at.colId) return 'scope'
     if (s.scope === 'row' && sameBlock && sel.cellIndex === at.cellIndex && rowGroup.includes(sel.colId)) return 'scope'
     return ''

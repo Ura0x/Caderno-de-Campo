@@ -2,6 +2,7 @@ import { Document, Font, Page, StyleSheet, Text, View, pdf } from '@react-pdf/re
 import type { SheetContent, SheetTable, TextSection } from '@/lib/types'
 import {
   DEFAULT_FONT_SIZE,
+  DENSE_FONT_SIZE,
   V_ALIGN_FLEX,
   ZEBRA_BG,
   blockFrames,
@@ -11,7 +12,10 @@ import {
   effectiveStyle,
   isText,
   isZebraRow,
+  tableMinWidth,
+  unbreakableWords,
 } from './model'
+import { helveticaWidth } from './fontMetrics'
 import { cellDisplay } from './formula'
 import { TONES, parseNote } from './note'
 
@@ -31,16 +35,24 @@ const BORDER = '#cbd5e1'
 const BASE_FONT = 9
 // Mantém a proporção do editor: 14px na tela = 9pt no PDF.
 const pdfFontSize = (px?: number) => ((px ?? DEFAULT_FONT_SIZE) * BASE_FONT) / DEFAULT_FONT_SIZE
-/** Tabela compacta: letra a ~2/3 do normal (9pt → 6pt) e células com pouco espaço interno. */
-const DENSE_SCALE = 2 / 3
-const DENSE_PAD = { v: 0.8, h: 2 }
+/** Tabela compacta: letra padrão de 12px na tela = 7pt no PDF; tamanhos escolhidos mantêm a proporção. */
+const DENSE_PDF_FONT = 7
+const densePdfFontSize = (px?: number) => ((px ?? DENSE_FONT_SIZE) * DENSE_PDF_FONT) / DENSE_FONT_SIZE
+/** Espaço interno da célula compacta, proporcional à letra (letra maior não fica espremida). */
+const densePad = (font: number) => ({ v: Math.max(0.8, font * 0.15), h: Math.max(2, font * 0.35) })
 /** Altura de uma linha de texto na tabela compacta (letra + espaço + borda). */
-const denseRowHeight = (font: number) => font * 1.15 + DENSE_PAD.v * 2 + 1
+const denseRowHeight = (font: number) => font * 1.15 + densePad(font).v * 2 + 1
+
+/** Largura útil da página (pt): A4 menos as margens laterais. */
+const A4 = { width: 595.28, height: 841.89 }
+const PAGE_PAD_X = 32
+const contentWidthOf = (orientation: Orientation) =>
+  (orientation === 'landscape' ? A4.height : A4.width) - PAGE_PAD_X * 2
 
 const s = StyleSheet.create({
   page: {
     paddingTop: 34,
-    paddingHorizontal: 32,
+    paddingHorizontal: PAGE_PAD_X,
     paddingBottom: 46,
     fontSize: BASE_FONT,
     fontFamily: 'Helvetica',
@@ -77,9 +89,27 @@ const s = StyleSheet.create({
   group: { flexDirection: 'column', borderRightWidth: 1, borderColor: BORDER },
   row: { flexDirection: 'row', flexGrow: 1, borderBottomWidth: 1, borderColor: BORDER },
   cell: { minHeight: 18, paddingVertical: 3.5, paddingHorizontal: 5, borderColor: BORDER },
-  denseCell: { minHeight: 0, paddingVertical: DENSE_PAD.v, paddingHorizontal: DENSE_PAD.h },
+  denseCell: { minHeight: 0 },
   // Com tabelas compactas a página tem menos margem e as seções ficam mais juntas, para caber numa folha.
   densePage: { paddingTop: 22, paddingBottom: 34 },
+  // Cabeçalho compacto (páginas com tabela compacta): título e detalhes numa linha só.
+  compactHeader: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', marginBottom: 6 },
+  compactTitle: { fontSize: 13, fontFamily: 'Helvetica-Bold', color: GREEN_DARK, marginRight: 12 },
+  compactDetail: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0fdf4',
+    borderWidth: 0.75,
+    borderColor: '#bbf7d0',
+    borderRadius: 3,
+    paddingVertical: 2,
+    paddingHorizontal: 5,
+    marginRight: 5,
+  },
+  compactLabel: { fontSize: 6, fontFamily: 'Helvetica-Bold', color: '#15803d', letterSpacing: 0.5, marginRight: 4 },
+  compactValue: { fontSize: 8, fontFamily: 'Helvetica-Bold', color: '#0f172a' },
+  compactBlank: { fontSize: 8, color: '#94a3b8' },
+  compactDivider: { marginBottom: 8 },
   denseSection: { marginBottom: 8 },
   denseTitleRow: { marginBottom: 3 },
   densePill: { paddingVertical: 2, paddingHorizontal: 6 },
@@ -178,8 +208,33 @@ function VerticalText({ length, font, children }: { length: number; font: number
   )
 }
 
-function PdfTable({ table }: { table: SheetTable }) {
+/**
+ * Escala para nenhuma palavra ser quebrada no meio: se a maior palavra de alguma coluna não
+ * couber na largura que a coluna recebe, a letra da tabela diminui o necessário.
+ */
+function wordFitScale(table: SheetTable, scale: number, contentWidth: number): number {
   const dense = !!table.dense
+  let s = scale
+  // Algumas iterações: o espaço interno não é exatamente proporcional à letra.
+  for (let i = 0; i < 4; i++) {
+    const needed = tableMinWidth(table, (col, cell) => {
+      const st = effectiveStyle(col, cell)
+      if (st.vertical || !cell.raw.trim()) return 0
+      const font = (dense ? densePdfFontSize(st.fontSize) : pdfFontSize(st.fontSize)) * s
+      const padX = dense ? densePad(font).h : 5 * s
+      const word = Math.max(...unbreakableWords(cell.raw).map((w) => helveticaWidth(w, font, !!st.bold)))
+      // +2: bordas e folga de arredondamento.
+      return word + padX * 2 + 2
+    })
+    if (needed <= contentWidth) break
+    s *= contentWidth / needed
+  }
+  return s
+}
+
+function PdfTable({ table, scale: pageScale, contentWidth }: { table: SheetTable; scale: number; contentWidth: number }) {
+  const dense = !!table.dense
+  const scale = wordFitScale(table, pageScale, contentWidth)
   const cellCount = table.blocks.reduce((n, b) => n + Object.values(b.cells).reduce((m, c) => m + c.length, 0), 0)
   return (
     // Tabelas pequenas não são quebradas entre páginas.
@@ -217,7 +272,8 @@ function PdfTable({ table }: { table: SheetTable }) {
                             const cell = cellsOf(block, col.id)[r]
                             if (!cell) return null
                             const st = effectiveStyle(col, cell)
-                            const font = pdfFontSize(st.fontSize) * (dense ? DENSE_SCALE : 1)
+                            const font = (dense ? densePdfFontSize(st.fontSize) : pdfFontSize(st.fontSize)) * scale
+                            const pad = densePad(font)
                             const text = (
                               <Text
                                 style={{
@@ -232,13 +288,16 @@ function PdfTable({ table }: { table: SheetTable }) {
                             )
                             // Comprimento disponível para o texto deitado: a altura do bloco, descontada uma folga.
                             const verticalLength =
-                              (blockRows / group.rows) * (dense ? denseRowHeight(font) : 18) - 4
+                              (blockRows / group.rows) * (dense ? denseRowHeight(font) : 18 * scale) - 4
                             return (
                               <View
                                 key={cell.id}
                                 style={[
                                   s.cell,
-                                  dense ? s.denseCell : {},
+                                  scale !== 1 && !dense
+                                    ? { minHeight: 18 * scale, paddingVertical: 3.5 * scale, paddingHorizontal: 5 * scale }
+                                    : {},
+                                  dense ? { ...s.denseCell, paddingVertical: pad.v, paddingHorizontal: pad.h } : {},
                                   // Pesos normalizados no grupo: somando menos de 1, a célula não ocuparia a largura toda.
                                   { flex: columnWidth(col) / weight, justifyContent: V_ALIGN_FLEX[st.vAlign ?? 'top'] },
                                   st.vertical ? { position: 'relative', minHeight: font * 3 } : {},
@@ -279,10 +338,16 @@ function SheetPdf({
   header,
   content,
   orientation,
+  scale = 1,
+  onPages,
 }: {
   header: PdfHeader
   content: SheetContent
   orientation: Orientation
+  /** Fator aplicado à letra e ao espaço das tabelas (1 = como na tela). */
+  scale?: number
+  /** Recebe o total de páginas quando o documento é montado. */
+  onPages?: (total: number) => void
 }) {
   const generated = new Date().toLocaleDateString('pt-BR')
   const hasDense = content.sections.some((sec) => !isText(sec) && sec.dense)
@@ -290,8 +355,20 @@ function SheetPdf({
     <Document title={header.title}>
       <Page size="A4" orientation={orientation} style={[s.page, hasDense ? s.densePage : {}]}>
         <View style={s.topBar} fixed />
-        <Text style={s.title}>{header.title}</Text>
-        {header.details.length > 0 && (
+        {hasDense ? (
+          <View style={s.compactHeader}>
+            <Text style={s.compactTitle}>{header.title}</Text>
+            {header.details.map((d) => (
+              <View key={d.label} style={s.compactDetail}>
+                <Text style={s.compactLabel}>{d.label.toUpperCase()}</Text>
+                <Text style={d.value ? s.compactValue : s.compactBlank}>{d.value || '____ / ____ / ________'}</Text>
+              </View>
+            ))}
+          </View>
+        ) : (
+          <Text style={s.title}>{header.title}</Text>
+        )}
+        {!hasDense && header.details.length > 0 && (
           <View style={s.details}>
             {header.details.map((d) => (
               <View key={d.label} style={s.detail}>
@@ -302,23 +379,72 @@ function SheetPdf({
             ))}
           </View>
         )}
-        <View style={s.divider} />
+        <View style={[s.divider, hasDense ? s.compactDivider : {}]} />
         {content.sections.map((sec) =>
-          isText(sec) ? <PdfText key={sec.id} section={sec} /> : <PdfTable key={sec.id} table={sec} />,
+          isText(sec) ? <PdfText key={sec.id} section={sec} /> : <PdfTable key={sec.id} table={sec} scale={scale} contentWidth={contentWidthOf(orientation)} />,
         )}
         <View style={s.footer} fixed>
           <Text>
             {header.title} · gerado em {generated}
           </Text>
-          <Text render={({ pageNumber, totalPages }) => `Página ${pageNumber} de ${totalPages}`} />
+          <Text
+            render={({ pageNumber, totalPages }) => {
+              if (totalPages) onPages?.(totalPages)
+              return `Página ${pageNumber} de ${totalPages}`
+            }}
+          />
         </View>
       </Page>
     </Document>
   )
 }
 
-export async function exportSheetPdf(header: PdfHeader, content: SheetContent, orientation: Orientation) {
-  const blob = await pdf(<SheetPdf header={header} content={content} orientation={orientation} />).toBlob()
+/** Gera o PDF numa escala e informa quantas páginas ele teve. */
+async function render(header: PdfHeader, content: SheetContent, orientation: Orientation, scale: number) {
+  let pages = 0
+  const blob = await pdf(
+    <SheetPdf
+      header={header}
+      content={content}
+      orientation={orientation}
+      scale={scale}
+      onPages={(n) => (pages = Math.max(pages, n))}
+    />,
+  ).toBlob()
+  return { blob, pages }
+}
+
+/** Menor redução aceita ao encaixar numa página (abaixo disso fica ilegível; o PDF sai com mais páginas). */
+const MIN_FIT_SCALE = 0.5
+
+/**
+ * Maior escala (≤ 1) em que o documento cabe em uma página, por busca binária.
+ * Se nem na escala mínima couber, devolve o PDF em tamanho normal (várias páginas).
+ */
+async function renderFitted(header: PdfHeader, content: SheetContent, orientation: Orientation) {
+  const full = await render(header, content, orientation, 1)
+  if (full.pages <= 1) return full.blob
+  let best = await render(header, content, orientation, MIN_FIT_SCALE)
+  if (best.pages > 1) return full.blob
+  let [lo, hi] = [MIN_FIT_SCALE, 1]
+  for (let i = 0; i < 6; i++) {
+    const mid = (lo + hi) / 2
+    const r = await render(header, content, orientation, mid)
+    if (r.pages <= 1) [lo, best] = [mid, r]
+    else hi = mid
+  }
+  return best.blob
+}
+
+export async function exportSheetPdf(
+  header: PdfHeader,
+  content: SheetContent,
+  orientation: Orientation,
+  { fitOnePage = false }: { fitOnePage?: boolean } = {},
+) {
+  const blob = fitOnePage
+    ? await renderFitted(header, content, orientation)
+    : (await render(header, content, orientation, 1)).blob
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url

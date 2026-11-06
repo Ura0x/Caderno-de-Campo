@@ -1,7 +1,7 @@
 import { nanoid } from 'nanoid'
 import type { Block, Cell, CellStyle, Column, Section, SheetContent, SheetTable, TextSection, Tone } from '@/lib/types'
 
-export type Scope = 'cell' | 'row' | 'column'
+export type Scope = 'cell' | 'row' | 'column' | 'table'
 
 /** Posição de uma célula: tabela → bloco → coluna → índice dentro da coluna no bloco. */
 export interface Selection {
@@ -23,6 +23,9 @@ export const ZEBRA_BG = '#f4f7f6'
 export const isZebraRow = (rows: number, index: number) => rows > 1 && index % 2 === 1
 
 export const DEFAULT_FONT_SIZE = 14
+/** Letra padrão das tabelas compactas (px). */
+export const DENSE_FONT_SIZE = 12
+export const defaultFontSize = (dense?: boolean) => (dense ? DENSE_FONT_SIZE : DEFAULT_FONT_SIZE)
 export const FONT_SIZES = [10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 40]
 
 /** Próximo tamanho da lista, para cima (+1) ou para baixo (-1). */
@@ -105,6 +108,29 @@ export const MAX_WIDTH = 4
 export const WIDTH_STEP = 0.25
 
 export const columnWidth = (col: Column) => col.width ?? 1
+
+/**
+ * Pedaços de texto que não podem ser quebrados numa linha: as palavras, divididas também
+ * depois de hífen ("PRÉ-" + "COLHEITA"). Usado para dar às colunas largura para a maior palavra.
+ */
+export const unbreakableWords = (text: string) =>
+  text.split(/\s+/).flatMap((w) => w.split(/(?<=-)/)).filter(Boolean)
+
+/**
+ * Largura mínima da tabela (na unidade de `minWidthOf`) para nenhuma coluna ficar mais estreita
+ * que a maior palavra dela. As colunas continuam proporcionais aos pesos (blocos alinhados):
+ * a tabela inteira é que precisa ser larga o bastante para a coluna mais "apertada".
+ */
+export function tableMinWidth(table: SheetTable, minWidthOf: (col: Column, cell: Cell) => number): number {
+  const total = table.columns.reduce((n, c) => n + columnWidth(c), 0)
+  let perWeight = 0
+  for (const col of table.columns) {
+    let min = 0
+    for (const b of table.blocks) for (const cell of cellsOf(b, col.id)) min = Math.max(min, minWidthOf(col, cell))
+    perWeight = Math.max(perWeight, min / columnWidth(col))
+  }
+  return perWeight * total
+}
 
 /**
  * Agrupa colunas vizinhas que têm o mesmo número de células (> 1) no bloco.
@@ -216,7 +242,7 @@ const block = (d: SheetContent, ref: BlockRef) => table(d, ref.tableId)?.blocks.
 const cellList = (d: SheetContent, ref: ColumnRef) => block(d, ref)?.cells[ref.colId]
 
 /** Células atingidas por um estilo no escopo escolhido. */
-function scopedCells(t: SheetTable, sel: Selection, scope: Exclude<Scope, 'column'>): Cell[] {
+function scopedCells(t: SheetTable, sel: Selection, scope: Exclude<Scope, 'column' | 'table'>): Cell[] {
   const b = t.blocks.find((x) => x.id === sel.blockId)
   if (!b) return []
   const cols = scope === 'row' ? rowColumns(b, t.columns, sel.colId) : t.columns.filter((c) => c.id === sel.colId)
@@ -335,13 +361,14 @@ export const ops = {
   applyStyle(d: SheetContent, sel: Selection, scope: Scope, patch: CellStyle) {
     const t = table(d, sel.tableId)
     if (!t) return
-    if (scope === 'column') {
-      const col = t.columns.find((c) => c.id === sel.colId)
-      if (!col) return
-      col.style = mergeStyle(col.style, patch)
+    if (scope === 'column' || scope === 'table') {
+      const cols = scope === 'table' ? t.columns : t.columns.filter((c) => c.id === sel.colId)
       // Remove sobrescritas das células para o estilo da coluna aparecer.
       const keys = Object.keys(patch)
-      for (const b of t.blocks) for (const cell of cellsOf(b, col.id)) cell.style = withoutKeys(cell.style, keys)
+      for (const col of cols) {
+        col.style = mergeStyle(col.style, patch)
+        for (const b of t.blocks) for (const cell of cellsOf(b, col.id)) cell.style = withoutKeys(cell.style, keys)
+      }
       return
     }
     for (const cell of scopedCells(t, sel, scope)) cell.style = mergeStyle(cell.style, patch)
@@ -350,13 +377,32 @@ export const ops = {
   clearStyle(d: SheetContent, sel: Selection, scope: Scope) {
     const t = table(d, sel.tableId)
     if (!t) return
-    if (scope === 'column') {
-      const col = t.columns.find((c) => c.id === sel.colId)
-      if (!col) return
-      col.style = undefined
-      for (const b of t.blocks) for (const cell of cellsOf(b, col.id)) cell.style = undefined
+    if (scope === 'column' || scope === 'table') {
+      const cols = scope === 'table' ? t.columns : t.columns.filter((c) => c.id === sel.colId)
+      for (const col of cols) {
+        col.style = undefined
+        for (const b of t.blocks) for (const cell of cellsOf(b, col.id)) cell.style = undefined
+      }
       return
     }
     for (const cell of scopedCells(t, sel, scope)) cell.style = undefined
+  },
+
+  /**
+   * Aumenta (+1) ou diminui (-1) a letra da tabela inteira em um passo, célula a célula,
+   * mantendo as diferenças (cabeçalho maior continua maior). Na coluna, tamanho igual ao padrão fica sem valor salvo.
+   */
+  stepTableFont(d: SheetContent, tableId: string, dir: 1 | -1) {
+    const t = table(d, tableId)
+    if (!t) return
+    const base = defaultFontSize(t.dense)
+    for (const col of t.columns) {
+      // Célula com tamanho próprio mantém o valor salvo (sem ele, herdaria o tamanho da coluna).
+      for (const b of t.blocks)
+        for (const cell of cellsOf(b, col.id))
+          if (cell.style?.fontSize) cell.style = mergeStyle(cell.style, { fontSize: stepFontSize(cell.style.fontSize, dir) })
+      const next = stepFontSize(col.style?.fontSize ?? base, dir)
+      col.style = mergeStyle(col.style, { fontSize: next === base ? undefined : next })
+    }
   },
 }
