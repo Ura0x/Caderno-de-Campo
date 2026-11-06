@@ -1,4 +1,5 @@
 import type { SheetContent } from '@/lib/types'
+import { adubacaoGoiabaFoliar, adubacaoGoiabaSolo } from './adubacaoGoiaba'
 import { nutricaoFoliar } from './nutricaoFoliar'
 
 /**
@@ -14,6 +15,6 @@ export interface SheetTemplate {
   build: () => SheetContent
 }
 
-export const TEMPLATES: SheetTemplate[] = [nutricaoFoliar]
+export const TEMPLATES: SheetTemplate[] = [nutricaoFoliar, adubacaoGoiabaSolo, adubacaoGoiabaFoliar]
 
 export const findTemplate = (id: string) => TEMPLATES.find((t) => t.id === id)
